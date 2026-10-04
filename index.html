@@ -635,7 +635,7 @@ function decState(a) {
 function packInit() {             // повна картина: усі сліди й шматочки
   G.iv = ++ivSeq; G.needInit = false; G.initAt = performance.now();
   return {
-    iv: G.iv, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0),
+    iv: G.iv, n: G.n, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0),
     s: G.snakes.map(s => ({ c: s.pc, tr: s.trail.map(p => [ci(p[0]), ci(p[1])]).flat(), a: r3(s.a), l: s.len })),
     f: G.food.map(f => [ci(f[0]), ci(f[1])]).flat()
   };
@@ -759,6 +759,7 @@ function demoAI() {
 function resetView() {
   V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false; V.demo = false;
   V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; V.jit = 0; V.lossAt = -1e9; redraw = true;
+  cams[0].on = cams[1].on = false;
   V.scat.clear(); V.bumps.length = 0;
   viewQ.length = 0; aimQ.length = 0; viewAt = 0; aimAt = 0;
   lastPhase = null; lastCountNum = null; myAim = null;
@@ -783,7 +784,7 @@ function setText(id, t) { if (hudCache[id] !== t) { hudCache[id] = t; $(id).text
 
 function applyInit(i) {            // повна картина прийшла: починаємо з чистого аркуша
   V.s = i.s.map(o => ({ trail: dec(o.tr), pc: o.c, adv: [], a: o.a, len: o.l }));
-  V.food = dec(i.f); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false;
+  V.food = dec(i.f); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false; V.n = i.n;
   V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
 }
 
@@ -791,6 +792,7 @@ const hpts = [];                  // тимчасовий список точо�
 function applyState(m, at) {
   const now = at || performance.now();
   if (!V.s || m.iv !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
+  const dn = clamp(m.n - V.n, 0, 8);                 // скільки кроків гри минуло з попереднього стану (більше одного, якщо пакет загубився)
   for (let j = 0; j < m.s.length; j++) {
     const o = m.s[j], vs = V.s[j], h = o.h, L = h.length >> 1;
     let x = h[0], y = h[1];
@@ -804,8 +806,8 @@ function applyState(m, at) {
       vs.pc = o.c;
     }
     for (let q = 0; q < L && q < vs.trail.length; q++) vs.trail[q] = hpts[q];   // найновіші точки завжди точно як у того, хто рахує
-    vs.adv.unshift(Math.max(0, d));
-    if (vs.adv.length > 8) vs.adv.length = 8;
+    for (let q = 0; q < dn; q++) vs.adv.unshift(Math.max(0, d) / dn);   // на кожен крок гри свій запис: рух лишається рівним і після втрати
+    if (vs.adv.length > 12) vs.adv.length = 12;
     const max = (o.l + 1) * K + 22;
     if (vs.trail.length > max) vs.trail.length = max;
     vs.a = o.a; vs.len = o.l;
@@ -817,9 +819,9 @@ function applyState(m, at) {
 
   // плавний годинник відтворення: згладжує нерівномірний прихід кроків
   const sample = m.n * TICK - now;
-  if (V.off == null || Math.abs(sample - V.off) > 120) { V.off = sample; V.jit = 0; }
+  if (V.off == null || Math.abs(sample - V.off) > 250) { V.off = sample; V.jit = 0; }   // годинник перескакує лише після справді великого збою
   else {
-    V.jit = Math.max(V.jit * .997, V.off - sample);   // наскільки пакети, буває, запізнюються відносно звичного ритму
+    V.jit += (Math.abs(V.off - sample) - V.jit) * .04;   // наскільки нерівно приходять пакети (звичайний розкид, а не найгірший випадок)
     V.off += (sample - V.off) * .08;
   }
   redraw = true;
@@ -918,6 +920,7 @@ let redraw = true;               // чи треба перемалювати н�
 let CW = 0, CH = 0, DPR = 1, U = 6;
 const TILE = 80;                 // розмір плитки тла в одиницях
 let arena = null, arenaU = 0, arenaDpr = 0;
+const OUTSIDE = '#d6d4e8';        // колір за межами майданчика
 let vis = { x0: 0, x1: 0, y0: 0, y1: 0 };
 
 let hudB = 0, hudL = 1e9, hudR = -1e9, mapTop = 12;   // де лежить табло: мінікарта й кнопки його обходять
@@ -935,7 +938,7 @@ function resize() {
   placeTouchUi();
 }
 function layoutInsets() {
-  const hud = $('hud'), tools = $('tools'), cr = cv.getBoundingClientRect();
+  const hud = $('hud'), tools = $('tools'), cr = cvRect = cv.getBoundingClientRect();   // запам'ятовуємо, де полотно: не питаємо браузер на кожен рух миші
   tools.style.top = '';
   const tr = tools.getBoundingClientRect();
   const base = tr.height ? tr.top - cr.top : 12;       // звичайний відступ згори (з урахуванням вирізу екрана)
@@ -954,11 +957,15 @@ function makeArena(u) {
   const k = u * DPR, R = ARENA * k, pad = Math.ceil(k * 2.5), size = Math.ceil(R * 2 + pad * 2);
   arena = document.createElement('canvas');
   arena.width = arena.height = Math.min(size, 4096);
-  const g = arena.getContext('2d');
+  const g = arena.getContext('2d', { alpha: false });  // непрозора картинка копіюється без змішування кольорів
   const sc = arena.width / size;                       // на велетенських екранах картинка трохи менша й розтягується
   g.scale(sc, sc);
+  g.fillStyle = OUTSIDE;
+  g.fillRect(0, 0, size, size);
   g.translate(size / 2, size / 2);
-  arena._scale = sc;
+  arena._scale = sc; arena._bmp = null;
+  const made = arena;
+  if (window.createImageBitmap) setTimeout(() => { createImageBitmap(made).then(b => { made._bmp = b; }).catch(() => {}); }, 0);
   // край майданчика з «незведеним друком» двох фарб
   const off = k * .55;
   g.lineWidth = k * 1.5;
@@ -1004,8 +1011,26 @@ function idxOff(vs, back) {
   }
   return o;
 }
+// Де намалювати голову. Якщо потрібний момент ще не настав у отриманих даних (пакет запізнюється),
+// не зупиняємо дракона, а домальовуємо його рух уперед тим самим ходом і з тим самим поворотом.
+// Коли дані прийдуть, справжнє місце майже збігається з домальованим, і ривка не видно.
 function pose(vs, back) {
-  const tr = vs.trail, off = idxOff(vs, back), p = trailAt(tr, off);
+  const tr = vs.trail;
+  if (back < 0 && tr.length > 2) {
+    const dx = tr[0][0] - tr[1][0], dy = tr[0][1] - tr[1][1];
+    if (dx * dx + dy * dy > 1e-6) {
+      const rate = Math.min(1, vs.adv.length > 1 ? (vs.adv[0] + vs.adv[1]) / 2 : 1);   // точок сліду за крок (менше одиниці, коли дракон пригальмував)
+      let ext = -back * rate, a = Math.atan2(dy, dx), x = tr[0][0], y = tr[0][1];
+      const w = clamp(angDiff(a, Math.atan2(tr[1][1] - tr[2][1], tr[1][0] - tr[2][0])), -TURN_STEP, TURN_STEP);
+      const off = -ext;
+      while (ext > 0) { const k = Math.min(1, ext); a += w * k; x += Math.cos(a) * STEP * k; y += Math.sin(a) * STEP * k; ext -= k; }
+      const r = Math.hypot(x, y), max = ARENA - R_HEAD;
+      if (r > max) { x *= max / r; y *= max / r; }   // за край майданчика не виїжджаємо навіть на домальованому кадрі
+      return { x, y, a, off };
+    }
+    back = 0;
+  }
+  const off = idxOff(vs, Math.max(0, back)), p = trailAt(tr, off);
   let a = vs.a;
   if (tr.length > 2) {
     const q = trailAt(tr, off + 1.5), dx = p[0] - q[0], dy = p[1] - q[1];
@@ -1016,51 +1041,86 @@ function pose(vs, back) {
 const PALS = COL.map(c => ({ main: c.main, alt: c.alt, light: c.light, ink: INK }));
 const seen = (x, y, m) => x > vis.x0 - m && x < vis.x1 + m && y > vis.y0 - m && y < vis.y1 + m;
 
-function drawSeg(cx, cy, r, fill, light) {
-  ctx.fillStyle = fill;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = light;
-  ctx.beginPath(); ctx.arc(cx, cy, r * .36, 0, TAU); ctx.fill();
+/* Заготовки. Ланки хвоста, шматочки й голови щокадру однакові, тож малюємо кожну фігуру один раз
+   у пам'ять, а в кадрі лише копіюємо готову картинку. Це в рази менше роботи, ніж щоразу
+   виводити кола з обведенням. Заготовки оновлюються, коли змінюється масштаб. */
+let spr = null, sprU = 0, sprDpr = 0;
+const TAPER = [1, .86, .72];     // кінчик хвоста трохи тонший
+function sprite(half, paint) {   // half — половина розміру в екранних точках
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.max(2, Math.ceil(half * 2 * DPR));
+  const g = c.getContext('2d');
+  g.scale(DPR, DPR);
+  g.translate(half, half);
+  paint(g);
+  c._h = half;
+  // готовий растр копіюється швидше, ніж полотно; поки він готується, малюємо з полотна
+  if (window.createImageBitmap) createImageBitmap(c).then(b => { c._bmp = b; }).catch(() => {});
+  return c;
+}
+function paintHead(g, r, lw, pal) {   // голова носом управо, без зіниць (вони рухаються й домальовуються окремо)
+  g.strokeStyle = INK; g.lineWidth = lw;
+  g.fillStyle = pal.light;
+  for (const s of [-1, 1]) {      // роги
+    g.beginPath();
+    g.moveTo(-.15 * r, s * .6 * r);
+    g.lineTo(-1.2 * r, s * 1.05 * r);
+    g.lineTo(-.7 * r, s * .2 * r);
+    g.closePath(); g.fill(); g.stroke();
+  }
+  g.lineWidth = lw * 2;           // голова й морда одним силуетом
+  g.beginPath(); g.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); g.stroke();
+  g.beginPath(); g.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); g.stroke();
+  g.fillStyle = pal.main;
+  g.beginPath(); g.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); g.fill();
+  g.lineWidth = lw * .8;
+  for (const s of [-1, 1]) {
+    g.fillStyle = '#fff';
+    g.beginPath(); g.arc(.12 * r, s * .47 * r, .29 * r, 0, TAU); g.fill(); g.stroke();
+    g.fillStyle = INK;
+    g.beginPath(); g.arc(1.02 * r, s * .2 * r, .065 * r, 0, TAU); g.fill();
+  }
+}
+function makeSprites() {
+  sprU = U; sprDpr = DPR;
+  const lw = Math.max(1.2, U * .3);
+  const disc = (r, fill, light, lineW) => sprite(r + lineW / 2 + 1.5, g => {
+    g.fillStyle = fill; g.strokeStyle = INK; g.lineWidth = lineW;
+    g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); g.stroke();
+    g.fillStyle = light;
+    g.beginPath(); g.arc(0, 0, r * .37, 0, TAU); g.fill();
+  });
+  const hr = R_HEAD * U * .88;
+  spr = {
+    seg: COL.map(c => TAPER.map(q => [disc(R_SEG * U * q, c.alt, c.light, lw), disc(R_SEG * U * q, c.main, c.light, lw)])),
+    food: disc(R_FOOD * U, '#ffd91a', '#fff6b8', Math.max(1.1, U * .26)),
+    head: PALS.map(pal => sprite(hr * 1.45 + lw, g => paintHead(g, hr, lw, pal))),
+    hr
+  };
 }
 
-function drawHead(cx, cy, ang, pal, look) {
-  const r = R_HEAD * U * .88, lw = ctx.lineWidth;
+function drawHead(cx, cy, ang, idx, look) {
+  const r = spr.hr, c = spr.head[idx];
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(ang);
-  ctx.fillStyle = pal.light;
-  for (const s of [-1, 1]) {      // роги
-    ctx.beginPath();
-    ctx.moveTo(-.15 * r, s * .6 * r);
-    ctx.lineTo(-1.2 * r, s * 1.05 * r);
-    ctx.lineTo(-.7 * r, s * .2 * r);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-  }
-  ctx.lineWidth = lw * 2;         // голова й морда одним силуетом
-  ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.stroke();
-  ctx.fillStyle = pal.main;
-  ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.fill();
-  ctx.lineWidth = lw * .8;
-  // очі дивляться туди, куди ти кермуєш: відгук миттєвий, навіть поки тіло ще повертає
-  const ex = look == null ? .1 : Math.cos(look) * .12, ey = look == null ? 0 : Math.sin(look) * .12;
-  for (const s of [-1, 1]) {
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(.12 * r, s * .47 * r, .29 * r, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = pal.ink;
-    ctx.beginPath(); ctx.arc((.12 + ex) * r, (s * .47 + ey) * r, .13 * r, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(1.02 * r, s * .2 * r, .065 * r, 0, TAU); ctx.fill();
-  }
+  ctx.drawImage(c._bmp || c, -c._h, -c._h, c._h * 2, c._h * 2);
+  // зіниці дивляться туди, куди ти кермуєш: відгук миттєвий, навіть поки тіло ще повертає
+  const ex = (.12 + (look == null ? .1 : Math.cos(look) * .12)) * r, ey = (look == null ? 0 : Math.sin(look) * .12) * r, pr = .13 * r;
+  ctx.fillStyle = INK;
+  ctx.beginPath();
+  ctx.arc(ex, ey + .47 * r, pr, 0, TAU);
+  ctx.moveTo(ex + pr, ey - .47 * r);
+  ctx.arc(ex, ey - .47 * r, pr, 0, TAU);
+  ctx.fill();
   ctx.restore();
 }
 
 function drawSnake(vs, idx, ps, now, aim) {
   const tr = vs.trail, n = vs.len, last = tr.length - 1;
   if (last < 0) return;
-  const col = COL[idx], bumps = V.bumps;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = Math.max(1.2, U * .3);
+  const bumps = V.bumps, set = spr.seg[idx];
   for (let i = n; i >= 1; i--) {   // хвіст: від кінця до голови; усе рахуємо на місці, без тимчасових об'єктів
     const f = i * K + ps.off, fi = Math.floor(f), t = f - fi;
     const a = tr[fi < last ? fi : last], b = tr[fi + 1 < last ? fi + 1 : last];
@@ -1077,12 +1137,11 @@ function drawSnake(vs, idx, ps, now, aim) {
     }
     if (!seen(x, y, 4)) continue;
     const fromTail = n - i;
-    const k = n > 3 ? (fromTail === 0 ? .72 : fromTail === 1 ? .86 : 1) : 1;
-    drawSeg(x * U, y * U, R_SEG * U * k, i % 2 ? col.main : col.alt, col.light);
+    const c = set[n > 3 ? (fromTail === 0 ? 2 : fromTail === 1 ? 1 : 0) : 0][i % 2];
+    ctx.drawImage(c._bmp || c, x * U - c._h, y * U - c._h, c._h * 2, c._h * 2);
   }
-  const pal = PALS[idx];
   if (!seen(ps.x, ps.y, 6)) return;
-  drawHead(ps.x * U, ps.y * U, ps.a, pal, aim == null ? null : angDiff(aim, ps.a));
+  drawHead(ps.x * U, ps.y * U, ps.a, idx, aim == null ? null : angDiff(aim, ps.a));
 }
 
 // маленька стрілка перед головою: показує, куди ти кермуєш (для клавіш і пальця)
@@ -1104,13 +1163,41 @@ function drawAim(ps, aim, idx) {
 function drawFood(x, y, now, scale) {
   if (!seen(x, y, 3)) return;
   const pul = REDUCED ? 1 : 1 + .06 * Math.sin(now / 260 + x * 1.7 + y * .9);
-  const cx = x * U, cy = y * U, r = R_FOOD * U * pul * scale;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = Math.max(1.1, U * .26);
-  ctx.fillStyle = '#ffd91a';
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#fff6b8';
-  ctx.beginPath(); ctx.arc(cx, cy, r * .38, 0, TAU); ctx.fill();
+  const c = spr.food, h = c._h * pul * scale;
+  ctx.drawImage(c._bmp || c, x * U - h, y * U - h, h * 2, h * 2);
+}
+
+// Мінікарта перемальовується не щокадру, а кілька разів на секунду: око різниці не бачить.
+const minis = [null, null];
+function miniMap(camIdx, MR, now, poses) {
+  let m = minis[camIdx];
+  const half = MR + 3;
+  if (!m || m._h !== half || m._dpr !== DPR) {
+    m = minis[camIdx] = document.createElement('canvas');
+    m.width = m.height = Math.ceil(half * 2 * DPR);
+    m._h = half; m._dpr = DPR; m._at = -1e9;
+  }
+  if (now - m._at < 110) return m;
+  m._at = now;
+  const g = m.getContext('2d'), ms = MR / ARENA;
+  g.setTransform(DPR, 0, 0, DPR, half * DPR, half * DPR);
+  g.clearRect(-half, -half, half * 2, half * 2);
+  g.fillStyle = 'rgba(246,245,251,.9)'; g.strokeStyle = INK; g.lineWidth = 2.5;
+  g.beginPath(); g.arc(0, 0, MR, 0, TAU); g.fill(); g.stroke();
+  g.fillStyle = '#e2ad00';
+  g.beginPath();
+  for (const f of V.food) { g.moveTo(f[0] * ms + 1.6, f[1] * ms); g.arc(f[0] * ms, f[1] * ms, 1.6, 0, TAU); }
+  g.fill();
+  for (const i of (camIdx === 0 ? [1, 0] : [0, 1])) {
+    const vs = V.s[i], tr = vs.trail;
+    g.strokeStyle = COL[i].main; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath();
+    for (let q = 0; q <= vs.len; q++) { const p = tr[Math.min(q * K, tr.length - 1)]; g.lineTo(p[0] * ms, p[1] * ms); }
+    g.stroke();
+    g.fillStyle = COL[i].main; g.strokeStyle = INK; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(poses[i].x * ms, poses[i].y * ms, i === camIdx ? 4 : 3.2, 0, TAU); g.fill(); g.stroke();
+  }
+  return m;
 }
 
 const fly = [];      // з'їдені шматочки, що летять до голови
@@ -1137,19 +1224,24 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
   opt = opt || {};
   U = opt.fit ? Math.min(vw, vh) / (2 * ARENA + 14) : viewScale(vw, vh);
   if (!arena || arenaU !== U || arenaDpr !== DPR) makeArena(U);
-  const cam = poses && !opt.fit ? poses[camIdx] : { x: 0, y: 0 };
+  if (!spr || sprU !== U || sprDpr !== DPR) makeSprites();
+  const cam = poses && !opt.fit ? cams[camIdx] : { x: 0, y: 0 };
+  const whole = vw >= CW && vh >= CH;                  // один вид на весь екран: обрізати нічого не треба
   ctx.save();
-  ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
-  ctx.fillStyle = '#d6d4e8';
-  ctx.fillRect(vx, vy, vw, vh);
+  if (!whole) { ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip(); }
   const sx = shake > .4 ? (Math.random() - .5) * 2 * shake : 0, sy = shake > .4 ? (Math.random() - .5) * 2 * shake : 0;
-  const acx = vx + vw / 2 - cam.x * U + sx, acy = vy + vh / 2 - cam.y * U + sy;   // де на екрані центр майданчика
+  // де на екрані центр майданчика; округлюємо до цілого пікселя, щоб підлога й дракони рухались узгоджено
+  const acx = Math.round((vx + vw / 2 - cam.x * U + sx) * DPR) / DPR, acy = Math.round((vy + vh / 2 - cam.y * U + sy) * DPR) / DPR;
   vis = { x0: cam.x - vw / 2 / U, x1: cam.x + vw / 2 / U, y0: cam.y - vh / 2 / U, y1: cam.y + vh / 2 / U };
   // готовий майданчик копіюємо піксель у піксель
-  const aw = arena.width / arena._scale;
+  const aw = arena.width / arena._scale, ax = Math.round(acx * DPR - aw / 2), ay = Math.round(acy * DPR - aw / 2);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (arena._scale === 1) ctx.drawImage(arena, Math.round(acx * DPR - aw / 2), Math.round(acy * DPR - aw / 2));
-  else ctx.drawImage(arena, Math.round(acx * DPR - aw / 2), Math.round(acy * DPR - aw / 2), aw, aw);
+  if (poses && !opt.fit && camIdx === (mode === 'guest' ? 1 : 0)) { aimX = acx + poses[camIdx].x * U; aimY = acy + poses[camIdx].y * U; }
+  // тло за майданчиком зафарбовуємо, лише коли його справді видно (камера біля краю)
+  if (ax > vx * DPR || ay > vy * DPR || ax + aw < (vx + vw) * DPR || ay + aw < (vy + vh) * DPR) { ctx.fillStyle = OUTSIDE; ctx.fillRect(vx * DPR, vy * DPR, vw * DPR, vh * DPR); }
+  const src = arena._bmp || arena;
+  if (arena._scale === 1) ctx.drawImage(src, ax, ay);
+  else ctx.drawImage(src, ax, ay, aw, aw);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.translate(acx, acy);
 
@@ -1206,35 +1298,27 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
     ctx.restore();
   }
   // мінікарта
-  const MR = clamp(Math.min(vw, vh) * .085, 26, 40), ms = MR / ARENA;
+  const MR = clamp(Math.min(vw, vh) * .085, 26, 40);
   const mx = opt.map === 'bl' ? vx + MR + 12 : vx + vw - MR - 12;
   const my = opt.map === 'bl' || opt.map === 'br' ? vy + vh - MR - 12 : vy + MR + (vy < 1 ? mapTop : 12);
-  ctx.fillStyle = 'rgba(246,245,251,.9)'; ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(mx, my, MR, 0, TAU); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#e2ad00';
-  for (const f of V.food) { ctx.beginPath(); ctx.arc(mx + f[0] * ms, my + f[1] * ms, 1.6, 0, TAU); ctx.fill(); }
-  for (const i of (camIdx === 0 ? [1, 0] : [0, 1])) {
-    const vs = V.s[i], tr = vs.trail;
-    ctx.strokeStyle = COL[i].main; ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath();
-    for (let s = 0; s <= vs.len; s++) { const p = tr[Math.min(s * K, tr.length - 1)]; ctx.lineTo(mx + p[0] * ms, my + p[1] * ms); }
-    ctx.stroke();
-    ctx.fillStyle = COL[i].main; ctx.strokeStyle = INK; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(mx + poses[i].x * ms, my + poses[i].y * ms, i === camIdx ? 4 : 3.2, 0, TAU); ctx.fill(); ctx.stroke();
-  }
+  const mm = miniMap(camIdx, MR, now, poses);
+  ctx.drawImage(mm, mx - mm._h, my - mm._h, mm._h * 2, mm._h * 2);
   ctx.restore();
 }
 
 // Запас плавності: на скільки кроків позаду останнього стану малюємо, щоб рух не смикався.
-// Раніше він був сталий (2 кроки напряму, 4 через сервери). Тепер підлаштовується під зв'язок:
-// на рівному зв'язку малий (картинка свіжіша), на нерівному чи з втратами — більший.
+// Він підлаштовується під зв'язок: на рівному малий (картинка свіжіша), на нерівному — більший.
 // Обчислює його другий гравець і повідомляє першому, тож в обох він однаковий.
 function bufWant(now) {
-  let b = 1 + (V.jit + 6) / TICK;
-  if (now - V.lossAt < 5000) b += 1;                 // недавно губились пакети: беремо на крок більше
-  return clamp(b, 1.3, 6);
+  // запас покриває звичайний розкид; рідкісні запізнення й поодинокі втрати дракон «проїжджає» сам (див. pose),
+  // тому тримати великий запас про всяк випадок більше не треба — картинка свіжіша
+  let b = 1 + (V.jit * 2.5 + 4) / TICK;
+  if (now - V.lossAt < 5000) b += .4;
+  return clamp(b, 1.2, 6);
 }
 let lastFrame = performance.now(), delayCur = 1;
+const cams = [{ x: 0, y: 0, on: false }, { x: 0, y: 0, on: false }];
+let aimX = 0, aimY = 0, cvRect = { left: 0, top: 0, width: 1, height: 1 };   // де на екрані голова мого дракона (для керування мишею)
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(60, now - lastFrame); lastFrame = now;
@@ -1262,8 +1346,17 @@ function frame(now) {
   const want = mode === 'guest' ? bufWant(now) : mode === 'host' ? (net && net.peerBuf) || 2 : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
   let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delayCur);
-  back = clamp(back, 0, 6);
+  back = clamp(back, V.phase === 'play' && !V.z ? -3 : 0, 8);   // до трьох кроків можемо домалювати самі
   const poses = V.s.map(vs => pose(vs, back));
+  V.rp = poses;
+  // камера не «прибита» до голови, а м'яко їде за нею: дрібне тремтіння даних не трясе весь екран
+  const kc = 1 - Math.exp(-dt / 70);
+  for (let i = 0; i < 2; i++) {
+    const c = cams[i], t = poses[i];
+    if (!c.on || Math.abs(t.x - c.x) + Math.abs(t.y - c.y) > 14) { c.x = t.x; c.y = t.y; c.on = true; }
+    else { c.x += (t.x - c.x) * kc; c.y += (t.y - c.y) * kc; }
+  }
+  V.cam = cams[mode === 'guest' ? 1 : 0];
   if (V.demo) { drawWorld(0, 0, CW, CH, 0, now, poses, { fit: true }); return; }
   if (mode === 'local') {          // на одному екрані в кожного своя половина
     if (CW >= CH) {
@@ -1561,6 +1654,7 @@ function openBroker(N, i) {
       if (err) { retryBroker(N, i); return; }
       c._ok = true; c._rx = performance.now();
       st.state = 'ok'; st.fails = 0;
+      if (N.other && linked) { try { c.subscribe(N.topic + '/d/' + N.other, { qos: 0 }); } catch (e) {} }
       if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); $('room-diag').hidden = true; discover(N); }
       else if (N.role === null) pub({ t: 'who' });                        // ще шукаємо: питаємо й на цьому сервері
       else if (N.role === 'host' && !linked) pub({ t: 'host' });          // чекаємо другого: оголошуємось і тут
@@ -1600,7 +1694,7 @@ function brokerDiag(N) {
 function netStart() {
   const N = net = {
     topic: 'dva-drakony/v1/' + room, clients: [], seq: 0, last: {}, ready: false,
-    br: BROKERS.map(() => ({ state: 'connecting', since: 0, fails: 0, timer: null })), kickAt: -1e9,
+    br: BROKERS.map(() => ({ state: 'connecting', since: 0, fails: 0, timer: null })), kickAt: -1e9, heard: null,
     role: null, other: null, via: 'relay', weak: false, byeAt: 0,
     peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, rtt: null, rtts: [], viaAt: 0,
     iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0, diagAt: 0,
@@ -1673,12 +1767,22 @@ function pubData(N, obj) {
   obj.f = me; obj.q = ++N.seq;
   const s = JSON.stringify(obj);
   const live = N.clients.filter(c => c && c._ok).sort((a, b) => (a._lat == null ? 1e9 : a._lat) - (b._lat == null ? 1e9 : b._lat));
-  for (let i = 0; i < live.length && i < 2; i++) { try { live[i].publish(N.topic, s, { qos: 0 }); } catch (e) {} }
+  // ігрові дані йдуть в окрему «скриньку» відправника: сервер не повертає їх нам самим, і трафік удвічі менший
+  for (let i = 0; i < live.length && i < 2; i++) { try { live[i].publish(N.topic + '/d/' + me, s, { qos: 0 }); } catch (e) {} }
 }
 
+const TD = new TextDecoder();
 function onRaw(N, p, c) {
+  const str = typeof p === 'string' ? p : TD.decode(p);
+  // Швидка перевірка ще до розбору: кожне повідомлення закінчується на …"f":"хто","q":номер}.
+  // Копію, яку вже бачили через інший сервер, відкидаємо, не витрачаючи час на розбір.
+  const qi = str.lastIndexOf('"q":'), fi = str.lastIndexOf('"f":"', qi);
+  if (qi > 0 && fi > 0) {
+    const f = str.slice(fi + 5, str.indexOf('"', fi + 5));
+    if (f !== me) { const w = N.last[f]; if (w && w.set.has(parseInt(str.slice(qi + 4), 10))) return; }
+  }
   let m;
-  try { m = JSON.parse(typeof p === 'string' ? p : new TextDecoder().decode(p)); } catch (e) { return; }
+  try { m = JSON.parse(str); } catch (e) { return; }
   if (!m || typeof m !== 'object' || typeof m.f !== 'string') return;
   if (m.f === me) {                    // наша власна «луна»: сервер живий, заодно міряємо, який швидший
     c._echo = true;
@@ -1789,6 +1893,7 @@ const linkObj = { get open() { return linked; }, send(m) { netSend(m); }, close(
 function linkUp(N) {                     // обоє в кімнаті
   linked = true;
   conn = linkObj;
+  listenTo(N, N.other);
   clearInterval(N.helloTimer); clearInterval(N.annTimer);
   lastSeen = performance.now();
   lastK = 0; lastAimSeq = 0; syncAsked = 0;
@@ -1799,6 +1904,16 @@ function linkUp(N) {                     // обоє в кімнаті
   showVia();
   document.title = 'Обоє в кімнаті';
   beep(660, .1); setTimeout(() => beep(880, .16), 120);
+}
+
+// слухаємо «скриньку» з ігровими даними саме цього гравця (і перестаємо слухати попереднього)
+function listenTo(N, id) {
+  if (N.heard === id) return;
+  for (const c of N.clients) if (c && c._ok) {
+    try { if (N.heard) c.unsubscribe(N.topic + '/d/' + N.heard); } catch (e) {}
+    try { if (id) c.subscribe(N.topic + '/d/' + id, { qos: 0 }); } catch (e) {}
+  }
+  N.heard = id;
 }
 
 // Другий гравець попрощався. Якщо він просто закрив вкладку посеред раунду, тримаємо для нього
@@ -1819,6 +1934,7 @@ function relink(N, from) {
   closeRtc(N);
   N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
   N.other = from; N.byeAt = 0;
+  listenTo(N, from);
   N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rtt = null; N.rtts = [];
   lastAimSeq = 0;
   lastSeen = performance.now();
@@ -1851,6 +1967,7 @@ function peerGone() {
   if (!N || !linked) return;
   linked = false; conn = null;
   N.weak = false; N.byeAt = 0;
+  listenTo(N, null);
   closeRtc(N);
   N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
   stopLoop();
@@ -2156,8 +2273,7 @@ function command(pl, a) {
 let lastMouse = null, keyLock = null;   // keyLock: де стояла миша, коли кермо перейшло до клавіш
 function mouseSteer() {
   if (!lastMouse || mode === 'local' || mode === 'menu' || !playing()) return;
-  const r = cv.getBoundingClientRect();
-  const dx = lastMouse.x - (r.left + r.width / 2), dy = lastMouse.y - (r.top + r.height / 2);
+  const dx = lastMouse.x - (cvRect.left + aimX), dy = lastMouse.y - (cvRect.top + aimY);   // відносно голови дракона на екрані
   if (dx * dx + dy * dy < 14 * 14) return;     // курсор просто на голові: напрямок не міняємо, щоб не смикало
   command(0, Math.atan2(dy, dx));
 }

@@ -266,6 +266,35 @@ a.btn{display:block;text-align:center;text-decoration:none}
   .num{font-size:20px}
   .pips i{border-width:1.5px}
 }
+
+/* кімната: дві частини (хто тут і посилання; режим і старт). На лежачому телефоні вони стають поруч. */
+.lobby,.lobby-col{display:flex;flex-direction:column;gap:14px}
+.who{flex-wrap:nowrap}
+.btn.ghost{min-height:44px}                         /* зручна для пальця висота */
+
+/* телефон: вікна мають уміщатись без прокручування */
+@media (max-width:520px), (max-height:520px){
+  #link{display:none}                               /* посилання надсилається кнопками; саме поле лише займає місце */
+  #link.show{display:block}
+  .mode{padding:8px 12px}
+  .mode span{display:none}                          /* опис видно лише у вибраного режиму: список лишається коротким, скільки б режимів не було */
+  .mode.on span{display:block}
+  .pl{font-size:12.5px;padding:4px 9px;gap:5px}
+  .pl em{font-size:12px}
+}
+@media (max-width:420px){
+  /* правила в меню: картинка зліва, підпис справа — так текст більший і читається з одного погляду */
+  .how{grid-template-columns:1fr;gap:8px}
+  .how figure{flex-direction:row;align-items:center;gap:11px}
+  .how svg{width:92px;flex:none}
+  .how figcaption{font-size:13.5px;line-height:1.3}
+}
+@media (orientation:landscape) and (max-height:520px){
+  #p-room{width:min(760px,100%)}
+  .lobby{flex-direction:row;align-items:flex-start;gap:18px}
+  .lobby-col{flex:1;min-width:0;gap:10px}
+  .coach{top:calc(var(--top) + 74px);bottom:auto}   /* підказка вгорі, а не посеред поля */
+}
 </style>
 </head>
 <body>
@@ -313,26 +342,32 @@ a.btn{display:block;text-align:center;text-decoration:none}
 
       <section class="panel" id="p-room" hidden>
         <h2 id="room-title">Кімната для двох</h2>
-        <div class="who" id="lobby-who" hidden>
-          <span class="pl" id="pl0"><i class="p"></i><b>Жаринка</b><em id="pl0-t"></em></span>
-          <span class="pl" id="pl1"><i class="b"></i><b>Хвилька</b><em id="pl1-t"></em></span>
-        </div>
-        <div class="stack" id="lobby-share" hidden>
-          <p class="lead">Надішли це посилання другому гравцю. Щойно він його відкриє, можна починати.</p>
-          <input class="link" id="link" readonly aria-label="Посилання на кімнату">
-          <div class="row">
-            <a class="btn primary" id="b-tg" target="_blank" rel="noopener">У Telegram</a>
-            <button class="btn" id="b-copy">Скопіювати</button>
+        <div class="lobby">
+          <div class="lobby-col">
+            <div class="who" id="lobby-who" hidden>
+              <span class="pl" id="pl0"><i class="p"></i><b>Жаринка</b><em id="pl0-t"></em></span>
+              <span class="pl" id="pl1"><i class="b"></i><b>Хвилька</b><em id="pl1-t"></em></span>
+            </div>
+            <div class="stack" id="lobby-share" hidden>
+              <p class="lead">Надішли посилання другому гравцю й чекай тут.</p>
+              <input class="link" id="link" readonly aria-label="Посилання на кімнату">
+              <div class="row">
+                <a class="btn primary" id="b-tg" target="_blank" rel="noopener">У Telegram</a>
+                <button class="btn" id="b-copy">Скопіювати</button>
+              </div>
+              <button class="btn ghost" id="b-share" hidden>Надіслати інакше</button>
+            </div>
+            <p class="status" id="room-status" role="status"></p>
           </div>
-          <button class="btn ghost" id="b-share" hidden>Надіслати інакше</button>
+          <div class="lobby-col">
+            <div class="stack" id="lobby-modes" hidden>
+              <h3 class="h3">Режим гри</h3>
+              <div class="modes" id="mode-list" role="radiogroup" aria-label="Режим гри"></div>
+            </div>
+            <p class="fine" id="join-controls" hidden></p>
+            <button class="btn primary" id="b-go" hidden disabled>Почати гру</button>
+          </div>
         </div>
-        <p class="status" id="room-status" role="status"></p>
-        <div class="stack" id="lobby-modes" hidden>
-          <h3 class="h3">Режим гри</h3>
-          <div class="modes" id="mode-list" role="radiogroup" aria-label="Режим гри"></div>
-        </div>
-        <p class="fine" id="join-controls" hidden></p>
-        <button class="btn primary" id="b-go" hidden disabled>Почати гру</button>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
 
@@ -1579,7 +1614,7 @@ if (TOUCH) $('b-local').hidden = true;   // режим «одна клавіат
    ===================================================================== */
 const lobby = { kind: 'online', stage: 'opening', note: '', weak: false };
 const LOBBY_TITLE = { opening: 'Заходжу в кімнату', waiting: 'Кімната для двох', ready: 'Обоє в кімнаті' };
-const LOBBY_NOTE = { opening: 'Заходжу в кімнату…', waiting: '', ready: 'Почати може будь-хто з вас.' };   // поки чекаємо, про це вже каже позначка біля другого гравця
+const LOBBY_NOTE = { opening: 'Заходжу в кімнату…', waiting: 'Чекаю на другого гравця…', ready: 'Почати може будь-хто з вас.' };   // поки чекаємо, про це вже каже позначка біля другого гравця
 function lobbySet(patch) {
   if (patch.stage) {             // новий етап: стара примітка й позначка про зв'язок уже не актуальні
     if (patch.note === undefined) patch.note = '';
@@ -1606,8 +1641,8 @@ function renderLobby() {
   $('lobby-modes').hidden = !known;                  // режим можна вибрати заздалегідь, ще поки чекаєш на другого
   $('join-controls').hidden = local || !ready;
   const go = $('b-go');
-  go.hidden = !known;
-  go.disabled = !ready || lobby.weak;
+  go.hidden = !ready;                                // поки другого гравця немає, кнопки старту немає: про очікування каже рядок стану
+  go.disabled = lobby.weak;
   const status = lobby.weak ? 'Зник зв’язок з другим гравцем. Відновлюю…' : lobby.note || (local ? '' : LOBBY_NOTE[st]);
   $('room-status').textContent = status;
   $('room-status').hidden = !status;
@@ -2728,7 +2763,8 @@ $('b-copy').addEventListener('click', async () => {
   const el = $('link'), btn = $('b-copy');
   let ok = false;
   try { await navigator.clipboard.writeText(el.value); ok = true; }
-  catch (e) { try { el.focus(); el.select(); ok = document.execCommand('copy'); } catch (e2) {} }
+  catch (e) { try { el.classList.add('show'); el.focus(); el.select(); ok = document.execCommand('copy'); } catch (e2) {} }   // на телефоні поле з посиланням сховане; якщо скопіювати не вдалось, показуємо його
+  if (ok) el.classList.remove('show');
   btn.textContent = ok ? 'Скопійовано' : 'Виділи вручну';
   setTimeout(() => { btn.textContent = 'Скопіювати'; }, 1800);
 });

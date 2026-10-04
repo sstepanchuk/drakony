@@ -29,7 +29,14 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐉</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@500;800&display=swap" rel="stylesheet">
+<!-- шрифти не затримують перший показ сторінки: поки вони вантажаться, видно системний шрифт -->
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@500;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@500;800&display=swap" rel="stylesheet"></noscript>
+<!-- заздалегідь «знайомимось» із серверами, які знадобляться для гри вдвох -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://broker.emqx.io:8084">
+<link rel="preconnect" href="https://broker.hivemq.com:8884">
+<link rel="preconnect" href="https://mqtt.eclipseprojects.io">
 <style>
 :root{
   --page:#e4e2f0;
@@ -295,6 +302,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
           </div>
         </div>
         <p class="status" id="room-status" role="status"></p>
+        <p class="fine" id="room-diag" hidden></p>
         <button class="btn primary" id="b-go" hidden disabled>Почати гру</button>
         <p class="fine" id="file-note" hidden>Зараз гра відкрита як файл із комп’ютера. Посилання запрацює для інших після публікації на GitHub Pages.</p>
         <button class="btn ghost" data-menu>У меню</button>
@@ -371,7 +379,8 @@ a.btn{display:block;text-align:center;text-decoration:none}
    Зіткнення як у житті: хвіст, у який врізались, рветься в місці удару.
    ===================================================================== */
 
-const $ = id => document.getElementById(id);
+const EL = {};
+const $ = id => EL[id] || (EL[id] = document.getElementById(id));   // елемент шукаємо в документі лише вперше
 const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -605,6 +614,24 @@ function pack(ev) {
   if (G.frep > 0) { G.frep--; m.f = G.food.map(f => [ci(f[0]), ci(f[1])]).flat(); }
   return m;
 }
+// У дорогу стан іде не об'єктом із назвами полів, а щільним списком чисел: так він майже вдвічі коротший.
+const PHASES = ['count', 'play', 'over'];
+function encState(m) {
+  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0), m.c, m.tl, m.iv, m.fv, m.lg];
+  for (const o of m.s) a.push([o.c, Math.round(o.a * 1000), o.l].concat(o.h));
+  a.push(m.e || 0);
+  if (m.f) a.push(m.f);
+  return a;
+}
+function decState(a) {
+  if (!Array.isArray(a) || a.length < 11 || !Array.isArray(a[8]) || !Array.isArray(a[9])) return null;
+  const fl = a[2], S = x => ({ c: x[0], a: x[1] / 1000, l: x[2], h: x.slice(3) });
+  return {
+    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, c: a[3], tl: a[4], iv: a[5], fv: a[6], lg: a[7],
+    s: [S(a[8]), S(a[9])], e: a[10] || null, f: a[11] || null
+  };
+}
+
 function packInit() {             // повна картина: усі сліди й шматочки
   G.iv = ++ivSeq; G.needInit = false; G.initAt = performance.now();
   return {
@@ -627,7 +654,7 @@ function lagMs() {                // оцінка шляху в один бік:
   if (!N || !linked || N.rtt == null) return 0;
   return Math.min(300, N.rtt / 2);
 }
-const applyItem = it => { if (it.i) applyInit(it.i); else applyState(it.m); };
+const applyItem = it => { if (it.i) applyInit(it.i); else applyState(it.m, it.at); };
 function hostView(it) {           // картинка того, хто рахує, показується із затримкою другого гравця
   if (mode !== 'host' || !linked) { applyItem(it); return; }
   viewAt = Math.max(viewAt, performance.now() + lagMs());
@@ -650,7 +677,7 @@ function emit(ev) {
   }
   const m = pack(ev);
   hostView({ m });
-  if (conn && conn.open) { try { conn.send({ t: 's', g: m }); } catch (e) {} }
+  if (conn && conn.open) { try { conn.send({ t: 's', g: encState(m) }); } catch (e) {} }
 }
 
 function hostTick() {
@@ -666,17 +693,19 @@ function hostTick() {
 
 function startLoop() {
   stopLoop();
-  let last = performance.now(), acc = 0;
-  loop = setInterval(() => {
-    const now = performance.now();
-    acc += now - last; last = now;
-    let n = 0;
-    while (acc >= TICK && n < 5 && loop && G) { acc -= TICK; n++; hostTick(); }
-    drainView(performance.now());
-    if (acc > TICK * 5) acc = 0;
-  }, 8);
+  const id = loop = { t: 0 };
+  let next = performance.now() + TICK;
+  const run = () => {
+    if (loop !== id) return;
+    let now = performance.now(), n = 0;
+    while (now >= next - .5 && n < 5 && loop === id && G) { hostTick(); next += TICK; n++; now = performance.now(); }
+    if (now - next > TICK * 5) next = now + TICK;     // вкладка «проспала»: не наздоганяємо, просто йдемо далі
+    drainView(now);
+    if (loop === id) id.t = setTimeout(run, Math.max(0, next - performance.now()));
+  };
+  id.t = setTimeout(run, TICK);
 }
-function stopLoop() { if (loop) { clearInterval(loop); loop = null; } }
+function stopLoop() { if (loop) { clearTimeout(loop.t); loop = null; } }
 
 // банер паузи: або хтось згорнув гру, або зник зв'язок
 function pauseBanner() {
@@ -729,7 +758,7 @@ function demoAI() {
 
 function resetView() {
   V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false; V.demo = false;
-  V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; redraw = true;
+  V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; V.jit = 0; V.lossAt = -1e9; redraw = true;
   V.scat.clear(); V.bumps.length = 0;
   viewQ.length = 0; aimQ.length = 0; viewAt = 0; aimAt = 0;
   lastPhase = null; lastCountNum = null; myAim = null;
@@ -759,8 +788,8 @@ function applyInit(i) {            // повна картина прийшла: 
 }
 
 const hpts = [];                  // тимчасовий список точок (щоб не створювати його 80 разів на секунду)
-function applyState(m) {
-  const now = performance.now();
+function applyState(m, at) {
+  const now = at || performance.now();
   if (!V.s || m.iv !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
   for (let j = 0; j < m.s.length; j++) {
     const o = m.s[j], vs = V.s[j], h = o.h, L = h.length >> 1;
@@ -788,8 +817,12 @@ function applyState(m) {
 
   // плавний годинник відтворення: згладжує нерівномірний прихід кроків
   const sample = m.n * TICK - now;
-  if (V.off == null || Math.abs(sample - V.off) > 120) V.off = sample;
-  else V.off += (sample - V.off) * .08;
+  if (V.off == null || Math.abs(sample - V.off) > 120) { V.off = sample; V.jit = 0; }
+  else {
+    V.jit = Math.max(V.jit * .997, V.off - sample);   // наскільки пакети, буває, запізнюються відносно звичного ритму
+    V.off += (sample - V.off) * .08;
+  }
+  redraw = true;
 
   V.demo = !!m.demo;
   const evs = m.e || [];
@@ -880,7 +913,7 @@ function showOver(a, b) {
    МАЛЮВАННЯ
    Камера летить за головою твого дракона (як у slither.io).
    ===================================================================== */
-const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false }), stage = $('stage');   // непрозоре полотно браузер малює швидше
+const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false, desynchronized: true }), stage = $('stage');   // непрозоре полотно браузер малює швидше
 let redraw = true;               // чи треба перемалювати нерухому сцену
 let CW = 0, CH = 0, DPR = 1, U = 6;
 const TILE = 80;                 // розмір плитки тла в одиницях
@@ -980,6 +1013,7 @@ function pose(vs, back) {
   }
   return { x: p[0], y: p[1], a, off };
 }
+const PALS = COL.map(c => ({ main: c.main, alt: c.alt, light: c.light, ink: INK }));
 const seen = (x, y, m) => x > vis.x0 - m && x < vis.x1 + m && y > vis.y0 - m && y < vis.y1 + m;
 
 function drawSeg(cx, cy, r, fill, light) {
@@ -1022,32 +1056,31 @@ function drawHead(cx, cy, ang, pal, look) {
 }
 
 function drawSnake(vs, idx, ps, now, aim) {
-  const tr = vs.trail, n = vs.len;
-  if (!tr.length) return;
-  const col = COL[idx];
-  const pal = { main: col.main, alt: col.alt, light: col.light, ink: INK };
-  const bs = V.bumps.length ? V.bumps.filter(b => b.i === idx) : V.bumps;
-  const at = f => {               // позиція ланки з хвилею від удару
-    const p = trailAt(tr, f);
-    for (const b of bs) {
-      const dx = p[0] - b.x, dy = p[1] - b.y, d2 = dx * dx + dy * dy;
+  const tr = vs.trail, n = vs.len, last = tr.length - 1;
+  if (last < 0) return;
+  const col = COL[idx], bumps = V.bumps;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1.2, U * .3);
+  for (let i = n; i >= 1; i--) {   // хвіст: від кінця до голови; усе рахуємо на місці, без тимчасових об'єктів
+    const f = i * K + ps.off, fi = Math.floor(f), t = f - fi;
+    const a = tr[fi < last ? fi : last], b = tr[fi + 1 < last ? fi + 1 : last];
+    let x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+    for (let q = 0; q < bumps.length; q++) {          // хвиля по тілу від удару
+      const bp = bumps[q];
+      if (bp.i !== idx) continue;
+      const dx = x - bp.x, dy = y - bp.y, d2 = dx * dx + dy * dy;
       if (d2 < 121) {
-        const t = now - b.t0, k = 1 - Math.sqrt(d2) / 11;
-        const amp = k * k * 1.5 * Math.exp(-t / 170) * Math.cos(t / 42);
-        p[0] += b.nx * amp; p[1] += b.ny * amp;
+        const tt = now - bp.t0, k = 1 - Math.sqrt(d2) / 11;
+        const amp = k * k * 1.5 * Math.exp(-tt / 170) * Math.cos(tt / 42);
+        x += bp.nx * amp; y += bp.ny * amp;
       }
     }
-    return p;
-  };
-  ctx.strokeStyle = pal.ink;
-  ctx.lineWidth = Math.max(1.2, U * .3);
-  for (let i = n; i >= 1; i--) {   // хвіст: від кінця до голови
-    const p = at(i * K + ps.off);
-    if (!seen(p[0], p[1], 4)) continue;
+    if (!seen(x, y, 4)) continue;
     const fromTail = n - i;
     const k = n > 3 ? (fromTail === 0 ? .72 : fromTail === 1 ? .86 : 1) : 1;
-    drawSeg(p[0] * U, p[1] * U, R_SEG * U * k, i % 2 ? pal.main : pal.alt, pal.light);
+    drawSeg(x * U, y * U, R_SEG * U * k, i % 2 ? col.main : col.alt, col.light);
   }
+  const pal = PALS[idx];
   if (!seen(ps.x, ps.y, 6)) return;
   drawHead(ps.x * U, ps.y * U, ps.a, pal, aim == null ? null : angDiff(aim, ps.a));
 }
@@ -1192,6 +1225,15 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
   ctx.restore();
 }
 
+// Запас плавності: на скільки кроків позаду останнього стану малюємо, щоб рух не смикався.
+// Раніше він був сталий (2 кроки напряму, 4 через сервери). Тепер підлаштовується під зв'язок:
+// на рівному зв'язку малий (картинка свіжіша), на нерівному чи з втратами — більший.
+// Обчислює його другий гравець і повідомляє першому, тож в обох він однаковий.
+function bufWant(now) {
+  let b = 1 + (V.jit + 6) / TICK;
+  if (now - V.lossAt < 5000) b += 1;                 // недавно губились пакети: беремо на крок більше
+  return clamp(b, 1.3, 6);
+}
 let lastFrame = performance.now(), delayCur = 1;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1210,11 +1252,14 @@ function frame(now) {
     drawWorld(0, 0, CW, CH, 0, now, null, { fit: mode === 'menu' });
     return;
   }
-  // малюємо на крок-два позаду останнього отриманого стану, щоб рух був рівний
+  // гра стоїть (пауза, кінець раунду, зник зв'язок) і ніщо не рухається: кадр не перемальовуємо, бережемо батарею
+  if (!V.demo && (V.z || V.phase === 'over' || (net && net.weak)) && !redraw && !parts.length && !fly.length && !V.scat.size && !V.bumps.length && shake < .4) return;
+  redraw = false;
+  // малюємо трохи позаду останнього отриманого стану, щоб рух був рівний
   if (linked && net && dcLive(net) && !dcFresh(net) && now - net.nudged > 400) {   // прямий канал замовк: одразу озиваємось через сервери
     net.nudged = now; net.pingAt = now; netSend(pingMsg(now));
   }
-  const want = mode === 'guest' || mode === 'host' ? (net && net.via === 'p2p' ? 2 : 4) : 1;   // запас плавності однаковий в обох гравців
+  const want = mode === 'guest' ? bufWant(now) : mode === 'host' ? (net && net.peerBuf) || 2 : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
   let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delayCur);
   back = clamp(back, 0, 6);
@@ -1400,7 +1445,16 @@ function startLocal() {
    гра просто лишається на серверах-посередниках і все одно працює.
    Хто зайшов першим, той рахує гру; ролі визначаються самі.
    ===================================================================== */
-const BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/mqtt'];
+// Публічні сервери повідомлень. Їх п'ять, щоб гра не залежала від одного: досить, щоб у обох гравців
+// працював хоча б один спільний. Два з них слухають на звичайному порту 443, який не блокують
+// навіть суворі мережі (робочий Wi-Fi, деякі мобільні оператори).
+const BROKERS = [
+  { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
+  { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' },
+  { name: 'Eclipse', url: 'wss://mqtt.eclipseprojects.io/mqtt' },
+  { name: 'Shiftr', url: 'wss://public.cloud.shiftr.io', user: 'public', pass: 'public' },
+  { name: 'Mosquitto', url: 'wss://test.mosquitto.org:8081/mqtt' }
+];
 const MQTT_URLS = [
   'https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js',
   'https://unpkg.com/mqtt@5/dist/mqtt.min.js'
@@ -1484,46 +1538,76 @@ async function enterRoom() {
   netStart();
 }
 
+/* З'єднання із серверами веде сама гра, а не бібліотека: так поведінка передбачувана.
+   - кожен сервер підключається окремо; якщо не вийшло, наступна спроба пізніше й пізніше (до 30 с),
+     щоб не засипати сервер і консоль запитами;
+   - з'єднання, яке ще встановлюється, ніхто не смикає повторно (саме це раніше ламало вхід у кімнату:
+     браузер часто повідомляє про дрібні зміни мережі, і гра починала друге підключення поверх першого);
+   - якщо не працює жоден сервер, пробуємо частіше: мабуть, річ у нашому інтернеті. */
 function openBroker(N, i) {
+  const B = BROKERS[i], st = N.br[i];
+  clearTimeout(st.timer); st.timer = null;
+  st.state = 'connecting'; st.since = performance.now();
+  const o = { clientId: 'dd-' + me + '-' + i + '-' + Date.now().toString(36), clean: true, keepalive: 15, reconnectPeriod: 0, connectTimeout: 8000 };
+  if (B.user) { o.username = B.user; o.password = B.pass; }
   let c;
-  try {
-    c = window.mqtt.connect(BROKERS[i], {
-      clientId: 'dd-' + me + '-' + i + '-' + Date.now().toString(36),
-      clean: true, keepalive: 5, reconnectPeriod: 1000, connectTimeout: 6000
-    });
-  } catch (e) { return; }
-  c._ok = false; c._echo = false; c._rx = performance.now();
+  try { c = window.mqtt.connect(B.url, o); } catch (e) { N.clients[i] = null; retryBroker(N, i); return; }
+  c._ok = false; c._echo = false; c._lat = null; c._rx = performance.now();
   N.clients[i] = c;
   c.on('connect', () => {
     if (net !== N || N.clients[i] !== c) return;
     c.subscribe(N.topic, { qos: 0 }, err => {
-      if (net !== N || N.clients[i] !== c || err) return;
+      if (net !== N || N.clients[i] !== c) return;
+      if (err) { retryBroker(N, i); return; }
       c._ok = true; c._rx = performance.now();
-      if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); discover(N); }
+      st.state = 'ok'; st.fails = 0;
+      if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); $('room-diag').hidden = true; discover(N); }
+      else if (N.role === null) pub({ t: 'who' });                        // ще шукаємо: питаємо й на цьому сервері
+      else if (N.role === 'host' && !linked) pub({ t: 'host' });          // чекаємо другого: оголошуємось і тут
+      pubOn(N, { t: 'k', ts: performance.now() });                         // одразу міряємо, наскільки сервер швидкий
     });
   });
   c.on('message', (t, p) => { if (net === N && N.clients[i] === c) { c._rx = performance.now(); onRaw(N, p, c); } });
-  c.on('close', () => { c._ok = false; });
+  c.on('close', () => { c._ok = false; if (net === N && N.clients[i] === c) retryBroker(N, i); });
   c.on('error', () => {});
 }
-// з'єднання із сервером зависло (так буває після зміни мережі): закриваємо й відкриваємо нове
-function rebuildBroker(N, i) {
+// сервер не відповів або з'єднання впало: закриваємо й пробуємо знову через паузу, щоразу довшу
+function retryBroker(N, i) {
+  const st = N.br[i];
+  if (st.timer) return;
   const old = N.clients[i];
   N.clients[i] = null;
   try { if (old) old.end(true); } catch (e) {}
+  st.state = 'wait'; st.fails++;
+  const anyOk = N.clients.some(c => c && c._ok);
+  const base = Math.min(anyOk ? 30000 : 2500, 1000 * Math.pow(2, Math.min(st.fails - 1, 5)));
+  st.timer = setTimeout(() => { st.timer = null; if (net === N) openBroker(N, i); }, base * (.75 + Math.random() * .5));
+}
+// те саме, але негайно (після зміни мережі чекати нема чого)
+function rebuildBroker(N, i) {
+  const st = N.br[i], old = N.clients[i];
+  clearTimeout(st.timer); st.timer = null;
+  N.clients[i] = null;
+  try { if (old) old.end(true); } catch (e) {}
   openBroker(N, i);
+}
+// рядок для екрана: що зараз із кожним сервером (допомагає зрозуміти, де саме затик)
+function brokerDiag(N) {
+  const now = performance.now();
+  return N.br.map((st, i) => BROKERS[i].name + ': ' + (st.state === 'ok' ? 'працює' : st.state === 'wait' ? 'недоступний' : now - st.since > 3500 ? 'не відповідає' : 'з’єднуюсь')).join(', ');
 }
 
 function netStart() {
   const N = net = {
     topic: 'dva-drakony/v1/' + room, clients: [], seq: 0, last: {}, ready: false,
+    br: BROKERS.map(() => ({ state: 'connecting', since: 0, fails: 0, timer: null })), kickAt: -1e9,
     role: null, other: null, via: 'relay', weak: false, byeAt: 0,
-    pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, rtt: null, rtts: [], viaAt: 0,
-    iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0,
+    peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, rtt: null, rtts: [], viaAt: 0,
+    iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0, diagAt: 0,
     whoTimer: null, annTimer: null, helloTimer: null, rtcTimer: null, failTimer: null, fullTimer: null
   };
-  BROKERS.forEach((url, i) => openBroker(N, i));
-  N.failTimer = setTimeout(() => { if (net === N && !N.ready) roomStatus(NO_SIGNAL); }, 9000);
+  BROKERS.forEach((b, i) => openBroker(N, i));
+  N.failTimer = setTimeout(() => { if (net === N && !N.ready) { roomStatus(NO_SIGNAL); $('room-diag').textContent = brokerDiag(N); $('room-diag').hidden = false; } }, 6000);
 }
 
 // мережа щойно змінилась або сторінка повернулась: одразу перевіряємо сервери, не чекаючи тайм-аутів
@@ -1531,16 +1615,34 @@ function kickNet() {
   const N = net;
   if (!N) return;
   const t0 = performance.now();
-  N.clients.forEach(c => { try { if (c && !c.connected) c.reconnect(); } catch (e) {} });
-  pubOn(N, { t: 'k', ts: performance.now() });   // живий сервер одразу поверне нам це повідомлення
+  if (t0 - N.kickAt < 3000) return;                  // не частіше, ніж раз на три секунди
+  N.kickAt = t0;
+  N.br.forEach((st, i) => {
+    if (st.state === 'wait') { st.fails = Math.min(st.fails, 1); rebuildBroker(N, i); }   // чекав наступної спроби: пробуємо зараз
+    else if (st.state === 'connecting' && t0 - st.since > 5000) rebuildBroker(N, i);      // завис на підключенні
+    // той, що саме підключається, лишаємо в спокої
+  });
+  pubOn(N, { t: 'k', ts: t0 });                      // живий сервер одразу поверне нам це повідомлення
   setTimeout(() => {
     if (net !== N) return;
     N.clients.forEach((c, i) => { if (c && c._ok && c._echo && c._rx < t0) rebuildBroker(N, i); });
-  }, 2000);
+  }, 2500);
   if (linked && N.role === 'guest') N.rtcNext = Math.min(N.rtcNext, t0 + 1500);   // і пряме з'єднання пробуємо заново
 }
 addEventListener('online', kickNet);
-try { if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', kickNet); } catch (e) {}
+// Браузер шле подію «мережа змінилась» і тоді, коли лише уточнив оцінку швидкості. Реагуємо,
+// тільки якщо справді змінився тип мережі (Wi-Fi ↔ мобільний) або зв'язку й так немає.
+try {
+  const nc = navigator.connection;
+  if (nc && nc.addEventListener) {
+    let kind = nc.type;
+    nc.addEventListener('change', () => {
+      const changed = nc.type !== kind;
+      kind = nc.type;
+      if (changed || (net && (!net.ready || net.weak))) kickNet();
+    });
+  }
+} catch (e) {}
 
 function netStop() {
   const N = net;
@@ -1548,8 +1650,10 @@ function netStop() {
   if (!N) return;
   try { pubOn(N, { t: 'bye', menu: 1 }); } catch (e) {}   // вийшли в меню: це остаточно
   for (const k of ['whoTimer', 'annTimer', 'helloTimer', 'rtcTimer', 'failTimer', 'fullTimer', 'qTimer']) { clearTimeout(N[k]); clearInterval(N[k]); }
+  for (const st of N.br) { clearTimeout(st.timer); st.timer = null; }
   closeRtc(N);
   for (const c of N.clients) { try { if (c) c.end(true); } catch (e) {} }
+  $('room-diag').hidden = true;
 }
 addEventListener('pagehide', () => {     // закриваємо вкладку: прощаємось усіма шляхами, якими встигнемо
   if (!net) return;
@@ -1647,8 +1751,8 @@ function discover(N) {
   mode = 'room';
   setChrome();
   pub({ t: 'who' });
-  setTimeout(() => { if (net === N && N.role === null) pub({ t: 'who' }); }, 700);
-  N.whoTimer = setTimeout(() => { if (net === N && N.role === null) becomeHost(N); }, 1800);
+  setTimeout(() => { if (net === N && N.role === null) pub({ t: 'who' }); }, 450);
+  N.whoTimer = setTimeout(() => { if (net === N && N.role === null) becomeHost(N); }, 1100);   // ніхто не відгукнувся: ми перші
 }
 
 function becomeHost(N) {
@@ -1688,7 +1792,7 @@ function linkUp(N) {                     // обоє в кімнаті
   clearInterval(N.helloTimer); clearInterval(N.annTimer);
   lastSeen = performance.now();
   lastK = 0; lastAimSeq = 0; syncAsked = 0;
-  N.weak = false; N.byeAt = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
+  N.weak = false; N.byeAt = 0; N.peerBuf = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
   N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = [];
   roomView('ready');
   if (!G) show('room');
@@ -1806,7 +1910,7 @@ function deliver(m, viaRelay) {
   N.byeAt = 0;
   let isNew = true;                                  // чи не приходило це вже іншим шляхом
   if (FAST[m.t] === 1) {
-    if (m.t === 's') isNew = !!m.g && m.g.k > lastK;
+    if (m.t === 's') isNew = Array.isArray(m.g) && m.g[0] > lastK;
     else if (m.t === 'p') { isNew = typeof m.ts === 'number' && m.ts > N.pts; if (isNew) N.pts = m.ts; }
     else if (m.t === 'a') isNew = typeof m.i === 'number' && m.i > lastAimSeq;
     else isNew = false;
@@ -1819,7 +1923,10 @@ function deliver(m, viaRelay) {
   if (m.t === 'p') {                                 // вимірювання затримки: відповідаємо одразу
     if (!isNew) return;
     netSend({ t: 'q', ts: m.ts });
-    if (mode === 'host' && typeof m.a === 'number') hostAim(m);   // у «пульсі» їде й останній напрямок: якщо окремий пакет загубився, він дійде тут
+    if (mode === 'host') {
+      if (typeof m.b === 'number' && m.b >= 10 && m.b <= 60) N.peerBuf = m.b / 10;
+      if (typeof m.a === 'number') hostAim(m);       // у «пульсі» їде й останній напрямок: якщо окремий пакет загубився, він дійде тут
+    }
     return;
   }
   if (m.t === 'q') {
@@ -1850,13 +1957,14 @@ function askSync(now) {            // просимо повну картину, 
 }
 function onGuestData(m) {
   if (m.t === 'i') { if (m.g) { applyInit(m.g); ivMissAt = 0; } return; }
-  if (m.t !== 's' || !m.g) return;
-  const k = m.g.k;
-  if (typeof k !== 'number' || k <= lastK) return;   // старе або повторне (канал не гарантує порядку)
-  lastK = k;
+  if (m.t !== 's') return;
+  const g = decState(m.g);
+  if (!g || typeof g.k !== 'number' || g.k <= lastK) return;   // старе або повторне (канал не гарантує порядку)
   const now = performance.now();
+  if (lastK > 0 && g.k > lastK + 1) V.lossAt = now;   // щось загубилось у дорозі: якийсь час тримаємо більший запас плавності
+  lastK = g.k;
   let ok = false;
-  try { ok = applyState(m.g); } catch (e) {}
+  try { ok = applyState(g); } catch (e) {}
   if (!ok) {                                         // стан є, а повної картини для нього ще немає
     if (!ivMissAt) ivMissAt = now;
     if (now - ivMissAt > 400) askSync(now);
@@ -1879,7 +1987,7 @@ function newPc(N) {
   if (!window.RTCPeerConnection) return null;
   closeRtc(N);
   let pc;
-  try { pc = new RTCPeerConnection({ iceServers: ICE }); } catch (e) { return null; }
+  try { pc = new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 1 }); } catch (e) { return null; }
   N.pc = pc;
   pc.onicecandidate = e => {
     if (e.candidate && net === N && N.pc === pc && linked) pub({ t: 'rtc', to: N.other, ice: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate });
@@ -1956,6 +2064,7 @@ function showVia() {
 function setWeak(N, v) {
   if (N.weak === v) return;
   N.weak = v;
+  if (v) kickNet();                                  // тиша: одразу перевіряємо, чи живі наші з'єднання із серверами
   if (mode === 'host') setPause('n', v);             // гра стає на паузу й сама продовжиться з короткого відліку
   pauseBanner();
   if (!G && !V.s) {                                  // ще в кімнаті, до старту
@@ -1972,7 +2081,10 @@ function setWeak(N, v) {
 const LOST_MS = window.__lostMs || 60000;
 function pingMsg(now) {
   const m = { t: 'p', ts: Math.round(now * 10) / 10 };
-  if (mode === 'guest' && myAim != null) { m.a = r3(myAim); m.i = aimSeq; }
+  if (mode === 'guest') {
+    m.b = Math.round(bufWant(now) * 10);               // який запас плавності нам потрібен: перший гравець візьме такий самий
+    if (myAim != null) { m.a = r3(myAim); m.i = aimSeq; }
+  }
   if (net && dcLive(net) && !dcHear(net)) m.r = 1;   // «прямим каналом я тебе не чую»: тоді обидва дублюють через сервери
   return m;
 }
@@ -1981,11 +2093,13 @@ setInterval(() => {
   if (!N) return;
   const now = performance.now();
   // сервери: раз на кілька секунд шлемо собі «луну»; хто її не повертає, того перепідключаємо
-  if (N.ready && now - N.kAt > 3000) {
+  if (now - N.kAt > 5000) {
     N.kAt = now;
     pubOn(N, { t: 'k', ts: now });
-    N.clients.forEach((c, i) => { if (c && c._ok && c._echo && now - c._rx > 9000) rebuildBroker(N, i); });
+    N.clients.forEach((c, i) => { if (c && c._ok && c._echo && now - c._rx > 12000) rebuildBroker(N, i); });
+    N.br.forEach((st, i) => { if (st.state === 'connecting' && now - st.since > 10000) retryBroker(N, i); });   // підключення зависло
   }
+  if (!N.ready && !$('room-diag').hidden && now - N.diagAt > 1000) { N.diagAt = now; $('room-diag').textContent = brokerDiag(N); }
   if (!linked) return;
   if (now - N.pingAt > 380) { N.pingAt = now; netSend(pingMsg(now)); }
   if (mode === 'host' && G && !G.demo && (paused() || G.phase === 'over') && now - lastEmit > 300) emit([]);   // гра стоїть: стан усе одно час від часу повторюємо
@@ -2024,8 +2138,8 @@ function flushAim() {
     aimQ.push({ at: aimAt, a: r3(myAim) });
   }
 }
-function sendAim() {             // кермо обох гравців проходить через однакове «сито»: не частіше, ніж раз на 30 мс
-  const wait = 30 - (performance.now() - aimSent);
+function sendAim() {             // кермо обох гравців проходить через однакове «сито»: напряму раз на 12 мс, через сервери раз на 30
+  const wait = (net && net.via === 'p2p' ? 12 : 30) - (performance.now() - aimSent);
   if (wait <= 0) flushAim();
   else if (!aimTimer) aimTimer = setTimeout(flushAim, wait);
 }
@@ -2247,8 +2361,11 @@ if (validRoom(qRoom)) {
   toMenu();
 }
 
+// мережеву бібліотеку підвантажуємо заздалегідь, поки гравець ще в меню: кімната потім відкриється без затримки
+setTimeout(() => { loadMqtt().catch(() => {}); }, 600);
+
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net) }; } };
 })();
 </script>
 </body>

@@ -41,6 +41,8 @@
   --yellow:#ffd91a;
   --display:'Unbounded','Arial Black','Segoe UI',system-ui,sans-serif;
   --text:'Onest','Segoe UI',system-ui,-apple-system,sans-serif;
+  --top:env(safe-area-inset-top,0px);
+  --bottom:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none !important}
@@ -57,82 +59,133 @@ body{
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
   -webkit-tap-highlight-color:transparent;
 }
-#app{
-  position:relative;
-  height:100vh;height:100dvh;
-  max-width:1180px;margin:0 auto;
-  display:flex;flex-direction:column;gap:8px;
-  padding:max(12px,env(safe-area-inset-top)) 14px max(10px,env(safe-area-inset-bottom));
-}
+button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 
-/* рахунок і таймер */
-.hud{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
-.score{display:flex;align-items:center;gap:10px;min-width:0}
-.score.right{justify-content:flex-end;text-align:right}
-.score b{
-  font-family:var(--display);font-weight:800;font-size:clamp(26px,6vw,36px);line-height:1;
-  color:var(--c);min-width:1.3em;text-align:center;font-variant-numeric:tabular-nums;
+/* поле на весь екран; усе інше лежить поверх нього */
+#app{position:relative;height:100vh;height:100dvh}
+.stage{position:absolute;inset:0}
+.board{position:absolute;inset:0;line-height:0;background:var(--paper)}
+canvas{display:block}
+
+/* табло: чиї зараз 16 шматочків */
+.hud{
+  position:absolute;z-index:3;left:50%;top:calc(var(--top) + 12px);transform:translateX(-50%);
+  width:min(440px,calc(100% - 22px));padding:8px 14px 11px;pointer-events:none;
+  background:rgba(246,245,251,.95);border:3px solid var(--ink);border-radius:18px;
+  box-shadow:4px 4px 0 var(--pink),-4px -4px 0 var(--blue);
 }
-.who{display:flex;flex-direction:column;min-width:0;line-height:1.15}
-.nm{font-weight:700;font-size:15px}
-.tag{font-size:12px;color:var(--mute);min-height:14px}
+.hud-top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.who{display:flex;align-items:center;gap:6px;min-width:0;font-weight:700;font-size:14px;line-height:1.1}
+.who.r{justify-content:flex-end}
+.tag{font-style:normal;font-weight:700;font-size:11px;line-height:1;padding:3px 7px;border-radius:999px;background:var(--ink);color:var(--paper);white-space:nowrap}
+.tag:empty{display:none}
 .timer{
-  font-family:var(--display);font-weight:500;font-size:clamp(18px,4.6vw,24px);
-  font-variant-numeric:tabular-nums;padding:6px 14px;
-  border:3px solid var(--ink);border-radius:999px;background:var(--paper);
+  font-family:var(--display);font-weight:500;font-size:17px;line-height:1;font-variant-numeric:tabular-nums;
+  padding:5px 12px;border:2.5px solid var(--ink);border-radius:999px;background:var(--paper);
 }
 .timer.low{background:var(--pink);color:#fff}
+.hud-bar{display:flex;align-items:center;gap:10px;margin-top:8px}
+.num{font-family:var(--display);font-weight:800;font-size:26px;line-height:1;min-width:1.25em;text-align:center;font-variant-numeric:tabular-nums}
+.num.p{color:var(--pink)}
+.num.b{color:var(--blue)}
+.pips{flex:1;display:grid;grid-template-columns:repeat(16,1fr);gap:3px}
+.pips i{aspect-ratio:1;border-radius:50%;border:2px solid var(--ink);background:var(--yellow);transition:background-color .18s}
+.pips i.p{background:var(--pink)}
+.pips i.b{background:var(--blue)}
 
-/* поле */
-.stage{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
-.board{
-  position:relative;line-height:0;
-  border:3px solid var(--ink);border-radius:14px;overflow:hidden;
-  background:var(--paper);
-  box-shadow:7px 7px 0 var(--pink),-7px -7px 0 var(--blue);
+/* кнопки-значки в кутку */
+.tools{position:absolute;z-index:6;left:10px;top:calc(var(--top) + 12px);display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.tool{
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  height:42px;min-width:42px;padding:0 9px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  background:rgba(246,245,251,.94);border:2.5px solid var(--ink);border-radius:999px;
+  font:700 13px/1 var(--text);color:var(--ink);
 }
-canvas{display:block}
+.tool svg{width:20px;height:20px;fill:var(--ink)}
+.tool .w{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.tool .off{display:none}
+.tool.muted .on{display:none}
+.tool.muted .off{display:block}
+.tool .lbl{display:none}
+.tool.ask{background:var(--yellow)}
+.tool.ask .lbl{display:inline}
+.tool.active{background:var(--yellow)}
+@media (hover:hover){.tool:hover{background:#fff}.tool.ask:hover,.tool.active:hover{background:var(--yellow)}}
+@media (max-width:699px){body.menu-open .tools{display:none}}
+
+.via{position:absolute;z-index:3;left:12px;bottom:calc(var(--bottom) + 8px);font-size:11px;color:var(--mute);pointer-events:none}
+.coach{
+  position:absolute;z-index:3;left:0;right:0;margin:0 auto;width:fit-content;bottom:calc(var(--bottom) + 34px);
+  max-width:calc(100% - 24px);padding:10px 16px;border-radius:22px;pointer-events:none;text-align:center;
+  background:var(--ink);color:var(--paper);font-size:14px;font-weight:500;line-height:1.3;
+}
+@media (pointer:coarse){.coach{bottom:calc(var(--bottom) + 190px)}}
+
+/* відлік і пауза */
 .count{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:var(--display);font-weight:800;font-size:clamp(90px,30vw,180px);line-height:1;
   color:var(--ink);text-shadow:5px 5px 0 var(--pink),-5px -4px 0 var(--blue);
   pointer-events:none;
 }
+.pause{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:24px;text-align:center;line-height:1.4;background:rgba(246,245,251,.84);
+}
+.pause b{font-family:var(--display);font-weight:800;font-size:clamp(28px,8vw,44px);line-height:1.1}
+.pause span{max-width:22em}
 
-/* вікна поверх поля */
+/* вікна */
 .overlay{
   position:absolute;inset:0;z-index:5;
   display:flex;align-items:center;justify-content:center;
-  background:rgba(228,226,240,.82);
+  padding:calc(var(--top) + 14px) 12px calc(var(--bottom) + 14px);
+  background:rgba(228,226,240,.8);
 }
+.overlay.soft{background:rgba(228,226,240,.5)}
 .panel{
-  width:min(400px,100%);max-height:100%;overflow:auto;touch-action:pan-y;
+  width:min(440px,100%);max-height:100%;overflow:auto;touch-action:pan-y;
   display:flex;flex-direction:column;gap:14px;
   padding:26px 22px 20px;text-align:center;
-  background:var(--paper);border:3px solid var(--ink);border-radius:16px;
+  background:var(--paper);border:3px solid var(--ink);border-radius:18px;
   box-shadow:6px 6px 0 var(--ink);
 }
+.panel > *{flex-shrink:0}
 .title{
-  font-family:var(--display);font-weight:800;font-size:clamp(30px,9vw,42px);line-height:1.05;
+  font-family:var(--display);font-weight:800;font-size:clamp(30px,9vw,44px);line-height:1.05;
   text-shadow:3px 3px 0 var(--pink),-3px -2px 0 var(--blue);
   padding:4px 0 2px;
 }
 h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);line-height:1.15}
 .lead{font-size:16px}
-.rules{list-style:none;text-align:left;display:flex;flex-direction:column;gap:8px;font-size:15px}
-.rules li{display:flex;gap:10px;align-items:flex-start}
-.pc{
-  flex:none;width:16px;height:16px;margin-top:3px;border-radius:50%;
-  background:var(--yellow);border:2.5px solid var(--ink);
-}
-.pc.dark{background:var(--ink)}
-.pc.bump{background:var(--paper);border-style:dashed}
+.chip{display:inline-block;width:14px;height:14px;margin-right:8px;border-radius:50%;border:2.5px solid var(--ink);vertical-align:-1px}
+.chip.p{background:var(--pink)}
+.chip.b{background:var(--blue)}
 .fine{font-size:13px;color:var(--mute)}
 .status{font-size:15px;font-weight:500;min-height:1.45em}
 .status:empty{display:none}
-.final{font-family:var(--display);font-weight:500;font-size:18px}
-.final .p{color:var(--pink);font-weight:800}
-.final .b{color:var(--blue);font-weight:800}
+
+/* правила в картинках */
+.how{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;text-align:left}
+.how figure{display:flex;flex-direction:column;gap:6px}
+.how svg{display:block;width:100%;height:auto;background:#fff;border:2.5px solid var(--ink);border-radius:12px}
+.how figcaption{font-size:12.5px;line-height:1.3}
+.how .ink{stroke:var(--ink);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.how .pk{fill:var(--pink)}
+.how .pk2{fill:#ff86c0}
+.how .bl{fill:var(--blue)}
+.how .bl2{fill:#6795f6}
+.how .yl{fill:var(--yellow)}
+.how .wh{fill:#fff}
+.how .dk{fill:var(--ink);stroke:none}
+.how .ln{fill:none}
+
+/* підсумок раунду */
+.final{display:flex;align-items:center;gap:10px}
+.final .num{font-size:34px}
+.final .pips{gap:4px}
+.final .pips i{border-width:2.5px}
+
 .link{
   width:100%;font:500 14px/1.2 var(--text);color:var(--ink);
   padding:12px;border:3px solid var(--ink);border-radius:12px;background:#fff;
@@ -154,7 +207,6 @@ a.btn{display:block;text-align:center;text-decoration:none}
 .btn.primary{background:var(--yellow)}
 .btn.ghost{border-color:transparent;box-shadow:none;background:none;font-weight:500;text-decoration:underline;padding:6px}
 .btn.ghost:active{transform:none;box-shadow:none}
-button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
 
 /* джойстик для телефона: з'являється там, де торкнувся */
 .stick{
@@ -165,115 +217,74 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
 .stick.on{opacity:.9}
 .knob{width:50px;height:50px;border-radius:50%;background:var(--yellow);border:3px solid var(--ink)}
 
-/* пауза */
-.pause{
-  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
-  padding:24px;text-align:center;line-height:1.4;background:rgba(246,245,251,.84);
-}
-.pause b{font-family:var(--display);font-weight:800;font-size:clamp(28px,8vw,44px);line-height:1.1}
-.pause span{max-width:22em}
-
-/* низ */
-.foot{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--mute);min-height:30px}
-.foot-btns{display:flex;gap:6px;flex:none}
-.mini{
-  appearance:none;-webkit-appearance:none;cursor:pointer;
-  font:500 13px/1 var(--text);color:var(--ink);
-  background:none;border:2px solid var(--ink);border-radius:999px;padding:7px 12px;
-}
-.mini{display:inline-flex;align-items:center;gap:6px}
-.mini .ic{display:none;width:20px;height:20px;fill:var(--ink)}
-.mini .ic .w{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round}
-.mini .off{display:none}
-.mini.muted .on{display:none}
-.mini.muted .off{display:block}
-.mini.ask{background:var(--yellow)}
-
-/* телефон: поле на весь екран, без рамок і бокових відступів; рахунок і кнопки лежать поверх поля */
-body.compact #app{max-width:none;padding:0;gap:0}
-body.compact .stage{position:absolute;inset:0}
-body.compact .board{border:0;border-radius:0;box-shadow:none}
-body.compact .hud{
-  position:absolute;left:0;right:0;top:0;z-index:6;pointer-events:none;gap:8px;
-  padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 14px;
-  background:linear-gradient(rgba(228,226,240,.94) 55%,rgba(228,226,240,0));
-}
-body.compact .timer{padding:4px 12px}
-body.compact .overlay{padding:calc(env(safe-area-inset-top,0px) + 64px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}
-body.compact .foot{
-  position:absolute;z-index:6;left:10px;top:calc(env(safe-area-inset-top,0px) + 62px);
-  min-height:0;pointer-events:none;
-}
-body.compact .foot-btns{flex-direction:column;align-items:flex-start;gap:8px;pointer-events:auto}
-body.compact.menu-open .foot-btns{display:none}
-.panel > *{flex-shrink:0}
-@media (max-height:520px){
-  body.compact .panel .rules,body.compact .panel .fine{display:none}
-  body.compact .panel{gap:10px;padding:18px 20px 14px}
-}
-body.compact #hint{display:none}
-body.compact #via{
-  position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 6px);
-  font-size:11px;pointer-events:none;
-}
-body.compact .mini{height:40px;min-width:40px;padding:0 9px;justify-content:center;background:rgba(246,245,251,.9)}
-body.compact .mini .ic{display:block}
-body.compact .mini .lbl{display:none}
-body.compact .mini.ask{background:var(--yellow)}
-body.compact .mini.ask .lbl{display:inline;font-weight:700}
-
+/* вузькі й низькі екрани */
 @media (max-width:420px){
-  .nm{font-size:13px}
-  .foot{font-size:12px}
+  .hud{padding:7px 11px 9px}
+  .who{font-size:13px}
+  .num{font-size:22px}
+  .hud-bar{gap:8px}
+  .pips{gap:2px}
+  .panel{padding:22px 18px 18px}
+  .how{gap:7px}
+  .how figcaption{font-size:12px}
+}
+@media (max-height:520px){
+  .panel .how,.panel .fine{display:none}
+  .panel{gap:10px;padding:18px 20px 14px}
+  .hud{top:calc(var(--top) + 8px);padding:5px 12px 7px}
+  .hud-bar{margin-top:5px}
+  .num{font-size:20px}
+  .pips i{border-width:1.5px}
 }
 </style>
 </head>
 <body>
 <div id="app">
-  <header class="hud" id="hud">
-    <div class="score" style="--c:var(--pink)">
-      <b id="s0">0</b>
-      <span class="who"><span class="nm">Жаринка</span><span class="tag" id="tag0"></span></span>
-    </div>
-    <div class="timer" id="timer">2:00</div>
-    <div class="score right" style="--c:var(--blue)">
-      <span class="who"><span class="nm">Хвилька</span><span class="tag" id="tag1"></span></span>
-      <b id="s1">0</b>
-    </div>
-  </header>
-
   <main class="stage" id="stage">
     <div class="board" id="board">
       <canvas id="cv" aria-label="Ігрове поле"></canvas>
       <div class="count" id="count" hidden></div>
       <div class="pause" id="pause" hidden>
         <b>Пауза</b>
-        <span>Хтось згорнув гру. Продовжимо, щойно обидва гравці повернуться на сторінку.</span>
+        <span id="pause-text"></span>
       </div>
     </div>
+
+    <header class="hud" id="hud" hidden>
+      <div class="hud-top">
+        <span class="who"><span>Жаринка</span><i class="tag" id="tag0"></i></span>
+        <span class="timer" id="timer">2:00</span>
+        <span class="who r"><i class="tag" id="tag1"></i><span>Хвилька</span></span>
+      </div>
+      <div class="hud-bar">
+        <b class="num p" id="s0">0</b>
+        <div class="pips" id="pips" role="img"></div>
+        <b class="num b" id="s1">0</b>
+      </div>
+    </header>
+
+    <div class="tools" id="tools">
+      <button class="tool" id="b-snd" aria-label="Звук" title="Звук увімкнено"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path class="w on" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="w off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+      <button class="tool" id="b-full" aria-label="На весь екран" title="На весь екран" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="w" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+      <button class="tool" id="b-quit" aria-label="Вийти в меню" title="Вийти в меню (Esc)" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path class="w" d="M6 6l12 12M18 6L6 18"/></svg><span class="lbl">Точно вийти?</span></button>
+    </div>
+    <div class="coach" id="coach" role="status" hidden></div>
+    <div class="via" id="via"></div>
 
     <div class="overlay" id="overlay">
       <section class="panel" id="p-menu">
         <h1 class="title">Два дракони</h1>
         <p class="lead">Два дракони їздять і збирають шматочки на хвіст. Через дві хвилини перемагає той, у кого хвіст довший.</p>
-        <ul class="rules">
-          <li><i class="pc"></i><span>На підлозі 16 шматочків. Наїдь на шматочок головою, і він причепиться до хвоста.</span></li>
-          <li><i class="pc bump"></i><span>В’їхав головою в хвіст — хвіст рветься в цьому місці. Усе, що відірвалось, лишається лежати, і забрати його може будь-хто.</span></li>
-          <li><i class="pc dark"></i><span>Голова в голову — обидва роз’їжджаються вбік, ніхто нічого не губить.</span></li>
-        </ul>
-        <button class="btn primary" id="b-host">Створити кімнату для двох</button>
-        <button class="btn" id="b-local">Грати вдвох на одній клавіатурі</button>
-        <p class="fine">Свій хвіст теж рветься, якщо в’їхати в нього. Камера їде за твоїм драконом, суперника видно на мінікарті.</p>
+        <div class="how" id="menu-how"></div>
+        <button class="btn primary" id="b-host">Грати вдвох за посиланням</button>
+        <button class="btn" id="b-local">Удвох на одній клавіатурі</button>
+        <p class="fine">Свій хвіст теж рветься, якщо в’їхати в нього головою.</p>
       </section>
 
       <section class="panel" id="p-room" hidden>
-        <h2>Кімната для двох</h2>
+        <h2 id="room-title">Кімната для двох</h2>
         <p class="lead" id="room-lead"></p>
-        <ul class="rules" id="room-rules" hidden>
-          <li><i class="pc"></i><span>На підлозі 16 шматочків. Наїдь на шматочок головою, і він причепиться до хвоста.</span></li>
-          <li><i class="pc bump"></i><span>В’їхав головою в хвіст — хвіст рветься в цьому місці. Усе, що відірвалось, лишається лежати, і забрати його може будь-хто.</span></li>
-          <li><i class="pc dark"></i><span>Голова в голову — обидва роз’їжджаються вбік, ніхто нічого не губить.</span></li>
-        </ul>
+        <div class="how" id="room-how" hidden></div>
         <p class="fine" id="join-controls" hidden></p>
         <input class="link" id="link" readonly hidden aria-label="Посилання на кімнату">
         <div class="stack" id="link-btns" hidden>
@@ -291,8 +302,13 @@ body.compact .mini.ask .lbl{display:inline;font-weight:700}
 
       <section class="panel" id="p-over" hidden>
         <h2 id="over-title"></h2>
-        <p class="final" id="over-score"></p>
+        <div class="final">
+          <b class="num p" id="over-a">0</b>
+          <div class="pips" id="over-pips" role="img"></div>
+          <b class="num b" id="over-b">0</b>
+        </div>
         <p class="lead" id="over-note"></p>
+        <p class="fine" id="over-series"></p>
         <button class="btn primary" id="b-again">Зіграти ще раз</button>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
@@ -300,15 +316,44 @@ body.compact .mini.ask .lbl{display:inline;font-weight:700}
   </main>
 
   <div class="stick" id="stick" hidden aria-hidden="true"><div class="knob" id="knob"></div></div>
-
-  <footer class="foot">
-    <span><span id="hint"></span> <span id="via"></span></span>
-    <span class="foot-btns">
-      <button class="mini" id="b-snd" aria-label="Звук"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path class="w on" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="w off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span class="lbl">Звук увімкнено</span></button>
-      <button class="mini" id="b-quit" aria-label="Вийти в меню" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path class="w" d="M6 6l12 12M18 6L6 18"/></svg><span class="lbl">У меню</span></button>
-    </span>
-  </footer>
 </div>
+
+<!-- правила в картинках: одна заготовка для меню й кімнати -->
+<template id="tpl-how">
+  <figure>
+    <svg viewBox="0 0 120 70" aria-hidden="true">
+      <circle class="ink pk2" cx="17" cy="38" r="8"/><circle class="ink pk" cx="36" cy="38" r="9.5"/>
+      <path class="ink wh" d="M52 27l-9-6 4 10zM52 49l-9 6 4-10z"/>
+      <circle class="ink pk" cx="60" cy="38" r="12.5"/>
+      <circle class="ink wh" cx="64" cy="32.5" r="3.6"/><circle class="ink wh" cx="64" cy="43.5" r="3.6"/><circle class="dk" cx="65.3" cy="32.5" r="1.6"/><circle class="dk" cx="65.3" cy="43.5" r="1.6"/>
+      <path class="ink ln" d="M79 38h9" stroke-dasharray="1 5"/>
+      <circle class="ink yl" cx="100" cy="38" r="8.5"/>
+    </svg>
+    <figcaption>Наїдь на шматочок, і він причепиться до хвоста.</figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="0 0 120 70" aria-hidden="true">
+      <circle class="ink pk" cx="16" cy="24" r="8.5"/><circle class="ink pk2" cx="34" cy="24" r="8.5"/>
+      <circle class="ink yl" cx="83" cy="20" r="8"/><circle class="ink yl" cx="103" cy="29" r="8"/>
+      <path class="ink ln" d="M50 12l4 5M59 9v6M68 12l-4 5"/>
+      <path class="ink wh" d="M49 60l-7 8 11-3zM69 60l7 8-11-3z"/>
+      <circle class="ink bl" cx="59" cy="46" r="12.5"/>
+      <circle class="ink wh" cx="53.5" cy="41" r="3.6"/><circle class="ink wh" cx="64.5" cy="41" r="3.6"/><circle class="dk" cx="53.5" cy="39.7" r="1.6"/><circle class="dk" cx="64.5" cy="39.7" r="1.6"/>
+    </svg>
+    <figcaption>В’їдь головою в хвіст, і він порветься. Що відпало, забере будь-хто.</figcaption>
+  </figure>
+  <figure>
+    <svg viewBox="0 0 120 70" aria-hidden="true">
+      <path class="ink ln" d="M60 22v-7M53 25l-4-5M67 25l4-5M60 48v7M53 45l-4 5M67 45l4 5"/>
+      <circle class="ink pk" cx="36" cy="35" r="12.5"/>
+      <circle class="ink wh" cx="40" cy="29.5" r="3.6"/><circle class="ink wh" cx="40" cy="40.5" r="3.6"/><circle class="dk" cx="41.3" cy="29.5" r="1.6"/><circle class="dk" cx="41.3" cy="40.5" r="1.6"/>
+      <circle class="ink bl" cx="84" cy="35" r="12.5"/>
+      <circle class="ink wh" cx="80" cy="29.5" r="3.6"/><circle class="ink wh" cx="80" cy="40.5" r="3.6"/><circle class="dk" cx="78.7" cy="29.5" r="1.6"/><circle class="dk" cx="78.7" cy="40.5" r="1.6"/>
+      <path class="ink ln" d="M22 20c-3-6-9-8-14-6M8 14l5-4M8 14l5 3M98 50c3 6 9 8 14 6M112 56l-5 4M112 56l-5-3"/>
+    </svg>
+    <figcaption>Зіткнетесь головами, і обох знесе вбік.</figcaption>
+  </figure>
+</template>
 
 <script>
 (() => {
@@ -364,9 +409,10 @@ const SHARE_TEXT = 'Заходь, зіграємо в драконів. Відк
 /* ---------- стан ---------- */
 let mode = 'menu';               // menu | local | host | guest
 let G = null;                    // справжній стан гри (лише в того, хто рахує)
-const V = { s: null, food: [], phase: null, n: 0, off: null, z: false, scat: new Map(), bumps: [] };   // те, що малюємо
+const V = { s: null, food: [], phase: null, n: 0, off: null, z: false, demo: false, scat: new Map(), bumps: [] };   // те, що малюємо
 let loop = null;
-let lastPhase = null, lastCountNum = null;
+let lastPhase = null, lastCountNum = null, lastSec = -1;
+let series = [0, 0];                 // рахунок серії раундів: [я, суперник], а на одній клавіатурі [Жаринка, Хвилька]
 let myAim = null;                    // куди я кермую (для гостя)
 let lastInput = '';                  // mouse | keys | touch
 let shake = 0;
@@ -383,27 +429,29 @@ const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000
    ===================================================================== */
 // len — скільки шматочків у хвості; голова сама по собі, як в іграшці
 function mkSnake(x, y, a) {
-  return { x, y, a, ta: a, len: 0, trail: [[x, y]], slow: 0, lock: 0, np: 0 };
+  return { x, y, a, ta: a, len: 0, trail: [[x, y]], pc: 1, slow: 0, lock: 0, np: 0 };   // pc: скільки точок сліду було за весь раунд
 }
 const segAt = (s, i) => s.trail[Math.min(i * K, s.trail.length - 1)];
-const paused = () => !!(G && (G.pz.h || G.pz.g));
+const paused = () => !!(G && (G.pz.h || G.pz.g || G.pz.n));   // h, g: хтось згорнув гру; n: зник зв'язок
 
 function newGame() {
   G = {
     phase: 'count', count: COUNT_TICKS, ticksLeft: ROUND_TICKS, n: 0,
-    food: [], fdirty: true, init: true,
+    food: [], fdirty: true, needInit: true, iv: 0, fv: 0, frep: 0, eid: 0, evs: [], initAt: 0,
     inp: [null, null],
-    pz: { h: document.visibilityState === 'hidden', g: false },
+    pz: { h: document.visibilityState === 'hidden', g: false, n: false },
     snakes: [mkSnake(-ARENA * .62, -6, 0), mkSnake(ARENA * .62, 6, Math.PI)]
   };
-  // розкидаємо всі шматочки по підлозі; більше їх не з'явиться
+  // Розкидаємо всі шматочки по підлозі; більше їх не з'явиться.
+  // Розклад дзеркальний відносно центру: кожному шматочку з одного боку відповідає такий самий з іншого,
+  // тож стартові умови в обох драконів однакові.
   let guard = 0;
-  while (G.food.length < BLOCKS && guard++ < 2000) {
-    const r = Math.sqrt(Math.random()) * (ARENA - 5), t = rand(0, TAU);
+  while (G.food.length < BLOCKS && guard++ < 4000) {
+    const r = 5 + Math.sqrt(Math.random()) * (ARENA - 10), t = rand(0, TAU);
     const x = r2(Math.cos(t) * r), y = r2(Math.sin(t) * r);
-    if (G.snakes.some(s => (x - s.x) ** 2 + (y - s.y) ** 2 < 100)) continue;
-    if (G.food.some(f => (x - f[0]) ** 2 + (y - f[1]) ** 2 < 64)) continue;
-    G.food.push([x, y, 0]);
+    const far = (px, py) => !G.snakes.some(s => (px - s.x) ** 2 + (py - s.y) ** 2 < 100) && !G.food.some(f => (px - f[0]) ** 2 + (py - f[1]) ** 2 < 64);
+    if (!far(x, y) || !far(-x, -y)) continue;
+    G.food.push([x, y, 0], [-x, -y, 0]);
   }
 }
 
@@ -480,26 +528,28 @@ function step(ev) {
       s.x += Math.cos(s.a) * STEP; s.y += Math.sin(s.a) * STEP;
       wallSlide(s);
       s.trail.unshift([s.x, s.y]);
+      s.pc++;
     }
     s.np = n;
     const max = (s.len + 1) * K + 2;
     if (s.trail.length > max) s.trail.length = max;
     if (s.slow > 0) s.slow--;
   });
-  // голова наїхала на шматочок: він чіпляється до хвоста
-  G.snakes.forEach((s, i) => {
-    for (let k = G.food.length - 1; k >= 0; k--) {
-      const f = G.food[k];
-      if (G.n < f[2]) continue;
-      const rr = R_HEAD + R_FOOD + .6;
-      if ((s.x - f[0]) ** 2 + (s.y - f[1]) ** 2 < rr * rr) {
-        s.len++;
-        ev.push(['e', i, f[0], f[1]]);
-        G.food.splice(k, 1);
-        G.fdirty = true;
-      }
-    }
-  });
+  // Голова наїхала на шматочок: він чіпляється до хвоста.
+  // Якщо обидві голови дотяглися в той самий крок, шматочок дістається ближчій; за рівної відстані — жереб.
+  const rr2 = (R_HEAD + R_FOOD + .6) ** 2;
+  for (let k = G.food.length - 1; k >= 0; k--) {
+    const f = G.food[k];
+    if (G.n < f[2]) continue;
+    const d0 = (G.snakes[0].x - f[0]) ** 2 + (G.snakes[0].y - f[1]) ** 2;
+    const d1 = (G.snakes[1].x - f[0]) ** 2 + (G.snakes[1].y - f[1]) ** 2;
+    if (d0 >= rr2 && d1 >= rr2) continue;
+    const i = d0 < rr2 && d1 < rr2 ? (Math.abs(d0 - d1) < 1e-9 ? (Math.random() < .5 ? 0 : 1) : (d0 < d1 ? 0 : 1)) : (d0 < rr2 ? 0 : 1);
+    G.snakes[i].len++;
+    ev.push(['e', i, f[0], f[1]]);
+    G.food.splice(k, 1);
+    G.fdirty = true;
+  }
   // зіткнення
   if (!headBounce(ev)) {
     const lim = (R_HEAD + R_SEG - .35) ** 2;
@@ -518,38 +568,99 @@ function step(ev) {
     });
     for (const c of cuts) if (c[2] <= G.snakes[c[1]].len) cutTail(c[0], c[1], c[2], ev);
   }
-  if (--G.ticksLeft <= 0) { G.phase = 'over'; ev.push(['o']); }
+  if (!G.demo && --G.ticksLeft <= 0) { G.phase = 'over'; ev.push(['o']); }
 }
 
-function pack(ev, moved) {
+/* Формат стану.
+   Стан летить 40 разів на секунду каналом без повторних надсилань: загублений пакет ніхто не чекає,
+   тому одна втрата не гальмує всі наступні. Щоб втрати не псували картинку, кожен пакет самодостатній:
+   - останні кілька точок сліду кожного дракона (а не лише нова), тож пропущені пакети відновлюються самі;
+   - шматочки на підлозі мають номер версії й дублюються в кількох пакетах поспіль після кожної зміни;
+   - події (з'їв, розірвав хвіст) мають номери й повторюються кілька кроків: отримувач бере лише нові.
+   Повна картина (усі сліди) йде окремо надійним каналом: на старті раунду й на прохання. */
+const HIST = 6;                  // скільки останніх точок сліду в кожному пакеті
+const FREP = 4;                  // у скількох пакетах поспіль повторюємо шматочки після зміни
+const EV_TICKS = 5;              // скільки кроків повторюємо подію
+const ci = v => Math.round(v * 100);
+const dec = a => { const o = []; for (let k = 0; k + 1 < a.length; k += 2) o.push([a[k] / 100, a[k + 1] / 100]); return o; };
+let ivSeq = 0, lastEmit = 0;
+
+function pack(ev) {
+  for (const e of ev) G.evs.push([++G.eid, G.n, e]);
+  while (G.evs.length && G.evs[0][1] < G.n - EV_TICKS) G.evs.shift();
+  if (G.fdirty) { G.fdirty = false; G.fv++; G.frep = FREP; }
   const m = {
-    p: G.phase, c: G.count, tl: G.ticksLeft, n: G.n, k: ++stateSeq, z: paused() ? 1 : 0,
+    k: ++stateSeq, n: G.n, p: G.phase, c: G.count, tl: G.ticksLeft, iv: G.iv, fv: G.fv,
+    z: !paused() ? 0 : (G.pz.h || G.pz.g ? 1 : 2), lg: Math.round(lagMs()),
     s: G.snakes.map(s => {
-      const q = [];
-      if (moved) for (let k = s.np - 1; k >= 0; k--) { const p = s.trail[k]; if (p) q.push(r2(p[0]), r2(p[1])); }
-      return { q, x: r2(s.x), y: r2(s.y), a: r3(s.a), l: s.len };
-    }),
-    e: ev
+      const tr = s.trail, L = Math.min(HIST, tr.length), h = [];
+      let px = ci(tr[0][0]), py = ci(tr[0][1]);
+      h.push(px, py);                                  // найновіша точка цілком, старіші — різницями (коротше)
+      for (let j = 1; j < L; j++) { const x = ci(tr[j][0]), y = ci(tr[j][1]); h.push(x - px, y - py); px = x; py = y; }
+      return { c: s.pc, h, a: r3(s.a), l: s.len };
+    })
   };
-  if (G.init) { m.i = G.snakes.map(s => s.trail.map(p => [r2(p[0]), r2(p[1])]).flat()); G.init = false; }
-  if (G.fdirty) { m.f = G.food.map(f => [f[0], f[1]]).flat(); G.fdirty = false; }
+  if (G.evs.length) m.e = G.evs.map(x => [x[0], x[2]]);
+  if (G.demo) m.demo = 1;
+  if (G.frep > 0) { G.frep--; m.f = G.food.map(f => [ci(f[0]), ci(f[1])]).flat(); }
   return m;
 }
+function packInit() {             // повна картина: усі сліди й шматочки
+  G.iv = ++ivSeq; G.needInit = false; G.initAt = performance.now();
+  return {
+    iv: G.iv, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0),
+    s: G.snakes.map(s => ({ c: s.pc, tr: s.trail.map(p => [ci(p[0]), ci(p[1])]).flat(), a: r3(s.a), l: s.len })),
+    f: G.food.map(f => [ci(f[0]), ci(f[1])]).flat()
+  };
+}
 
-function emit(ev, moved) {
-  const m = pack(ev, moved);
-  applyState(m);
+/* Чесність.
+   Гру рахує браузер одного з гравців. Без поправки цей гравець бачив би все трохи раніше, а його
+   кермо спрацьовувало б миттєво, тоді як другому заважала б затримка мережі. Тому той, хто рахує гру,
+   грає «через таку саму мережу»: його власна картинка і його власне кермо штучно запізнюються рівно
+   на стільки, скільки сигнал іде до другого гравця. У підсумку в обох однаково: і те, наскільки
+   свіжу картинку вони бачать, і те, як швидко дракон слухається керма. */
+const viewQ = [], aimQ = [];
+let viewAt = 0, aimAt = 0;
+function lagMs() {                // оцінка шляху в один бік: половина виміряного «туди й назад»
+  const N = net;
+  if (!N || !linked || N.rtt == null) return 0;
+  return Math.min(300, N.rtt / 2);
+}
+const applyItem = it => { if (it.i) applyInit(it.i); else applyState(it.m); };
+function hostView(it) {           // картинка того, хто рахує, показується із затримкою другого гравця
+  if (mode !== 'host' || !linked) { applyItem(it); return; }
+  viewAt = Math.max(viewAt, performance.now() + lagMs());
+  it.at = viewAt;
+  viewQ.push(it);
+}
+function drainView(now) {
+  while (viewQ.length && viewQ[0].at <= now) applyItem(viewQ.shift());
+}
+function hostAimDue(now) {        // і кермо того, хто рахує, доходить до гри з тією ж затримкою
+  while (aimQ.length && aimQ[0].at <= now) G.inp[0] = aimQ.shift().a;
+}
+
+function emit(ev) {
+  lastEmit = performance.now();
+  if (G.needInit) {
+    const i = packInit();
+    hostView({ i });
+    if (conn && conn.open) { try { conn.send({ t: 'i', g: i }); } catch (e) {} }
+  }
+  const m = pack(ev);
+  hostView({ m });
   if (conn && conn.open) { try { conn.send({ t: 's', g: m }); } catch (e) {} }
 }
 
 function hostTick() {
   if (paused()) return;
   const ev = [];
-  let moved = false;
+  if (mode === 'host') hostAimDue(performance.now());
   G.n++;
   if (G.phase === 'count') { if (--G.count <= 0) G.phase = 'play'; }
-  else if (G.phase === 'play') { step(ev); moved = true; }
-  emit(ev, moved);
+  else if (G.phase === 'play') { if (G.demo) demoAI(); step(ev); }
+  emit(ev);
   if (G.phase === 'over') stopLoop();
 }
 
@@ -561,32 +672,76 @@ function startLoop() {
     acc += now - last; last = now;
     let n = 0;
     while (acc >= TICK && n < 5 && loop && G) { acc -= TICK; n++; hostTick(); }
+    drainView(performance.now());
     if (acc > TICK * 5) acc = 0;
   }, 8);
 }
 function stopLoop() { if (loop) { clearInterval(loop); loop = null; } }
 
-// пауза, коли хтось згорнув гру
+// банер паузи: або хтось згорнув гру, або зник зв'язок
+function pauseBanner() {
+  const weak = !!(net && net.weak);
+  const on = !!V.s && !V.demo && V.phase !== 'over' && (!!V.z || weak);
+  $('pause').hidden = !on;
+  if (on) $('pause-text').textContent = net && net.byeAt
+    ? 'Другий гравець закрив вкладку. Трохи чекаю: якщо він повернеться, раунд продовжиться.'
+    : weak || V.z === 2
+    ? 'Зник зв’язок з другим гравцем. Відновлюю, гра продовжиться сама.'
+    : 'Хтось згорнув гру. Продовжимо, щойно обидва гравці повернуться на сторінку.';
+}
+
+// пауза, коли хтось згорнув гру або зник зв'язок
 function setPause(who, v) {
   if (!G || G.pz[who] === v) return;
   const was = paused();
   G.pz[who] = v;
-  if (was && !paused() && G.phase === 'play') { G.phase = 'count'; G.count = RESUME_TICKS; }
-  if (G.phase !== 'over') emit([], false);
+  if (was && !paused() && G.phase === 'play' && !G.demo) { G.phase = 'count'; G.count = RESUME_TICKS; }
+  if (G.phase !== 'over') emit([]);
+}
+
+// показ за меню: два дракони самі їздять і збирають шматочки, щоб одразу було видно, що це за гра
+function startDemo() {
+  if (REDUCED) return;
+  newGame();
+  G.demo = true; G.phase = 'play'; G.idle = 0;
+  resetView();
+  emit([]);
+  startLoop();
+}
+function demoAI() {
+  if (G.n % 6) return;
+  let free = 0;
+  G.snakes.forEach((s, i) => {
+    let best = null, bd = 1e9;
+    for (const f of G.food) {
+      if (G.n < f[2]) continue;
+      free++;
+      const d = (f[0] - s.x) ** 2 + (f[1] - s.y) ** 2;
+      if (d < bd) { bd = d; best = f; }
+    }
+    const o = G.snakes[1 - i];
+    const t = best || segAt(o, Math.max(1, o.len));      // шматочків не лишилось: полюємо на чужий хвіст
+    G.inp[i] = Math.atan2(t[1] - s.y, t[0] - s.x) + Math.sin(G.n / 37 + i * 2) * .25;
+  });
+  G.idle = free ? 0 : G.idle + 6;
+  if (G.idle > 12000 / TICK) startDemo();                // застрягли без шматочків: починаємо показ заново
 }
 
 function resetView() {
-  V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false;
+  V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false; V.demo = false;
+  V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; redraw = true;
   V.scat.clear(); V.bumps.length = 0;
+  viewQ.length = 0; aimQ.length = 0; viewAt = 0; aimAt = 0;
   lastPhase = null; lastCountNum = null; myAim = null;
   fly.length = 0; parts.length = 0; shake = 0;
   $('count').hidden = true; $('pause').hidden = true;
+  if (!$('hud').hidden) { $('hud').hidden = true; layoutInsets(); }
 }
 
 function startMatch() {
   newGame();
   resetView();
-  emit([], false);
+  emit([]);
   startLoop();
 }
 
@@ -597,59 +752,81 @@ function unflat(a, k) { const o = []; for (let i = 0; i + k <= a.length; i += k)
 const hudCache = {};
 function setText(id, t) { if (hudCache[id] !== t) { hudCache[id] = t; $(id).textContent = t; } }
 
+function applyInit(i) {            // повна картина прийшла: починаємо з чистого аркуша
+  V.s = i.s.map(o => ({ trail: dec(o.tr), pc: o.c, adv: [], a: o.a, len: o.l }));
+  V.food = dec(i.f); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false;
+  V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
+}
+
+const hpts = [];                  // тимчасовий список точок (щоб не створювати його 80 разів на секунду)
 function applyState(m) {
   const now = performance.now();
-  if (m.i) {
-    V.s = m.i.map(tr => ({ trail: unflat(tr, 2), adv: [], a: 0, len: 0 }));
-    V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
-    myAim = null;
-  }
-  if (!V.s) V.s = m.s.map(o => ({ trail: [[o.x, o.y]], adv: [], a: 0, len: 0 }));
-  m.s.forEach((o, j) => {
-    const vs = V.s[j], q = o.q || [];
-    for (let k = 0; k + 1 < q.length; k += 2) vs.trail.unshift([q[k], q[k + 1]]);
-    if (!vs.trail.length) vs.trail.push([o.x, o.y]);
-    else { vs.trail[0][0] = o.x; vs.trail[0][1] = o.y; }
-    vs.adv.unshift(q.length >> 1);
+  if (!V.s || m.iv !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
+  for (let j = 0; j < m.s.length; j++) {
+    const o = m.s[j], vs = V.s[j], h = o.h, L = h.length >> 1;
+    let x = h[0], y = h[1];
+    hpts.length = 0;
+    hpts.push([x / 100, y / 100]);
+    for (let q = 1; q < L; q++) { x += h[q * 2]; y += h[q * 2 + 1]; hpts.push([x / 100, y / 100]); }
+    const d = o.c - vs.pc;                           // скільки нових точок з'явилось відтоді, як ми чули востаннє
+    if (d > 0) {
+      for (let q = Math.min(d, L); q > 0; q--) vs.trail.unshift(null);
+      if (d > L) V.needSync = true;                  // пропустили більше, ніж уміщає пакет: попросимо повну картину
+      vs.pc = o.c;
+    }
+    for (let q = 0; q < L && q < vs.trail.length; q++) vs.trail[q] = hpts[q];   // найновіші точки завжди точно як у того, хто рахує
+    vs.adv.unshift(Math.max(0, d));
     if (vs.adv.length > 8) vs.adv.length = 8;
     const max = (o.l + 1) * K + 22;
     if (vs.trail.length > max) vs.trail.length = max;
     vs.a = o.a; vs.len = o.l;
-  });
-  if (m.f) V.food = unflat(m.f, 2);
-  V.phase = m.p; V.n = m.n; V.z = !!m.z;
+  }
+  if (m.fv !== V.fv) {
+    if (m.f) { V.food = dec(m.f); V.fv = m.fv; } else V.needSync = true;
+  }
+  V.phase = m.p; V.n = m.n; V.z = m.z || 0; V.lg = m.lg || 0;
 
   // плавний годинник відтворення: згладжує нерівномірний прихід кроків
   const sample = m.n * TICK - now;
   if (V.off == null || Math.abs(sample - V.off) > 120) V.off = sample;
   else V.off += (sample - V.off) * .08;
 
+  V.demo = !!m.demo;
+  const evs = m.e || [];
+  if (V.demo) { for (const e of evs) if (e[0] > V.eid) { V.eid = e[0]; fx(e[1], now, true); } return true; }   // показ за меню: без рахунку, звуків і вікон
+
+  if ($('hud').hidden) { $('hud').hidden = false; layoutInsets(); }
   setText('s0', String(m.s[0].l));
   setText('s1', String(m.s[1].l));
+  setPips($('pips'), m.s[0].l, m.s[1].l);
   const sec = Math.max(0, Math.ceil(m.tl * TICK / 1000));
   setText('timer', Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
   $('timer').classList.toggle('low', m.p === 'play' && sec <= 10);
+  if (m.p === 'play' && sec !== lastSec && sec <= 5 && sec > 0) beep(740, .05, 'square', .04);   // останні секунди чути
+  lastSec = sec;
 
-  for (const e of (m.e || [])) fx(e, now);
+  for (const e of evs) if (e[0] > V.eid) { V.eid = e[0]; fx(e[1], now, false); }   // кожна подія спрацьовує один раз, хоч і приходить кілька разів
 
   const countEl = $('count');
-  $('pause').hidden = !V.z || m.p === 'over';
+  pauseBanner();
   if (V.z) { countEl.hidden = true; lastCountNum = null; }
   else if (m.p === 'count') {
     const n = Math.max(1, Math.ceil(m.c * TICK / 1000));
     if (n !== lastCountNum) { lastCountNum = n; countEl.textContent = n; countEl.hidden = false; beep(440, .1); }
   }
   if (m.p !== lastPhase) {
-    if (m.p === 'count') { show(null); keepAwake(); document.title = TITLE; }
-    if (m.p === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); resteer(); }
+    if (m.p === 'count') { show(null); keepAwake(); document.title = TITLE; if (lastPhase !== 'play') myAim = null; }
+    if (m.p === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); resteer(); coachOnce(); }
     if (m.p === 'over') { countEl.hidden = true; lastCountNum = null; releaseInput(); showOver(m.s[0].l, m.s[1].l); }
     lastPhase = m.p;
   }
+  return true;
 }
 
-function fx(e, now) {
+function fx(e, now, quiet) {
   const t = e[0], i = e[1], x = e[2], y = e[3];
   const me = mode === 'guest' ? 1 : 0;
+  const beep = quiet ? () => {} : window.__beep;
   if (t === 'e') {                 // шматочок причепився до хвоста
     fly.push({ x, y, i, t0: now });
     V.scat.delete(x + ',' + y);
@@ -658,36 +835,44 @@ function fx(e, now) {
   else if (t === 'c') {            // хвіст розірвано: іскри, струс, хвиля по тілу
     burst(x, y, COL[i].main, 22); burst(x, y, '#ffffff', 6);
     V.bumps.push({ i, x, y, nx: e[4], ny: e[5], t0: now });
-    if (!REDUCED && (mode === 'local' || i === me || e[6] === me)) shake = 8;
+    if (!REDUCED && !quiet && (mode === 'local' || i === me || e[6] === me)) shake = 8;
     beep(150, .3, 'sawtooth', .07, .4); beep(90, .2, 'square', .05, .6);
-    try { if ((mode === 'local' || i === me) && navigator.vibrate) navigator.vibrate(60); } catch (err) {}
+    try { if (!quiet && (mode === 'local' || i === me) && navigator.vibrate) navigator.vibrate(60); } catch (err) {}
   }
   else if (t === 'b') {            // голова в голову
     burst(x, y, '#ffffff', 10);
-    if (!REDUCED) shake = 6;
+    if (!REDUCED && !quiet) shake = 6;
     beep(130, .16, 'square', .05, .7);
   }
   else if (t === 'd') { const a = i; for (let k = 0; k + 3 < a.length; k += 4) V.scat.set(a[k + 2] + ',' + a[k + 3], { fx: a[k], fy: a[k + 1], t0: now }); }
   else if (t === 'o') { beep(520, .15); setTimeout(() => beep(390, .3), 160); }
 }
 
+// смужка з 16 кружечків: скільки шматочків у кожного дракона і скільки лежить на підлозі
+function setPips(el, a, b) {
+  if (el.children.length !== BLOCKS) { el.textContent = ''; for (let k = 0; k < BLOCKS; k++) el.appendChild(document.createElement('i')); }
+  for (let k = 0; k < BLOCKS; k++) {
+    const c = k < a ? 'p' : k >= BLOCKS - b ? 'b' : '';
+    const it = el.children[k];
+    if (it.className !== c) it.className = c;
+  }
+  el.setAttribute('aria-label', NAMES[0] + ': ' + a + ', ' + NAMES[1] + ': ' + b + ', на підлозі: ' + Math.max(0, BLOCKS - a - b));
+}
+
 function showOver(a, b) {
   const win = a === b ? -1 : (a > b ? 0 : 1);
+  const online = mode === 'host' || mode === 'guest', me = mode === 'guest' ? 1 : 0;
   $('over-title').textContent = win < 0 ? 'Нічия' : 'Перемогла ' + NAMES[win];
-  const sc = $('over-score');
-  sc.textContent = '';
-  const mk = (cls, txt) => { const el = document.createElement('span'); if (cls) el.className = cls; el.textContent = txt; return el; };
-  sc.append(mk('p', NAMES[0] + ' ' + a), mk('', '  :  '), mk('b', b + ' ' + NAMES[1]));
-  let note;
-  if (mode === 'host' || mode === 'guest') {
-    const me = mode === 'host' ? 0 : 1;
-    note = win < 0 ? 'Дракони однакової довжини. Потрібен ще один раунд.'
-         : win === me ? 'Твій дракон довший. Чиста перемога.'
-         : 'Цього разу твій дракон коротший. Реванш?';
-  } else {
-    note = win < 0 ? 'Дракони однакової довжини. Потрібен ще один раунд.' : 'Переможений вимагає реваншу.';
-  }
-  $('over-note').textContent = note;
+  $('over-a').textContent = a; $('over-b').textContent = b;
+  setPips($('over-pips'), a, b);
+  $('over-note').textContent =
+    win < 0 ? 'Хвости однакові. Потрібен ще один раунд.' :
+    !online ? 'У неї хвіст довший на ' + Math.abs(a - b) + '.' :
+    win === me ? 'Це твій дракон. Хвіст довший на ' + Math.abs(a - b) + '.' : 'Це дракон суперника. Реванш?';
+  if (win >= 0) series[online ? (win === me ? 0 : 1) : win]++;
+  $('over-series').textContent = online
+    ? 'Серія раундів: ти ' + series[0] + ' : ' + series[1] + ' суперник'
+    : 'Серія раундів: ' + NAMES[0] + ' ' + series[0] + ' : ' + series[1] + ' ' + NAMES[1];
   show('over');
 }
 
@@ -695,59 +880,81 @@ function showOver(a, b) {
    МАЛЮВАННЯ
    Камера летить за головою твого дракона (як у slither.io).
    ===================================================================== */
-const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
+const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false }), stage = $('stage');   // непрозоре полотно браузер малює швидше
+let redraw = true;               // чи треба перемалювати нерухому сцену
 let CW = 0, CH = 0, DPR = 1, U = 6;
 const TILE = 80;                 // розмір плитки тла в одиницях
-let tile = null, tileU = 0;
+let arena = null, arenaU = 0, arenaDpr = 0;
 let vis = { x0: 0, x1: 0, y0: 0, y1: 0 };
 
-let compact = false, insetTop = 0;    // compact: телефонний вигляд, поле на весь екран
+let hudB = 0, hudL = 1e9, hudR = -1e9, mapTop = 12;   // де лежить табло: мінікарта й кнопки його обходять
 function resize() {
-  compact = TOUCH || window.innerWidth < 700;
-  document.body.classList.toggle('compact', compact);
-  const pad = compact ? 0 : 24;       // на комп'ютері лишаємо місце під рамку з тінями
-  const w = Math.max(200, Math.floor(stage.clientWidth - pad)), h = Math.max(200, Math.floor(stage.clientHeight - pad));
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  const w = Math.max(200, Math.floor(stage.clientWidth)), h = Math.max(200, Math.floor(stage.clientHeight));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);   // понад 2 око різниці не бачить, а пікселів удвічі більше
   if (w !== CW || h !== CH || dpr !== DPR) {
+    redraw = true;
     CW = w; CH = h; DPR = dpr;
     cv.style.width = CW + 'px'; cv.style.height = CH + 'px';
     cv.width = Math.round(CW * DPR); cv.height = Math.round(CH * DPR);
     stickHome = null;
   }
-  // на телефоні рахунок лежить поверх поля: мінікарту й стрілку опускаємо під нього
-  insetTop = compact ? Math.max(0, $('hud').getBoundingClientRect().bottom - cv.getBoundingClientRect().top) : 0;
+  layoutInsets();
   placeTouchUi();
+}
+function layoutInsets() {
+  const hud = $('hud'), tools = $('tools'), cr = cv.getBoundingClientRect();
+  tools.style.top = '';
+  const tr = tools.getBoundingClientRect();
+  const base = tr.height ? tr.top - cr.top : 12;       // звичайний відступ згори (з урахуванням вирізу екрана)
+  hudB = 0; hudL = 1e9; hudR = -1e9;
+  if (!hud.hidden) { const r = hud.getBoundingClientRect(); hudB = r.bottom - cr.top; hudL = r.left - cr.left; hudR = r.right - cr.left; }
+  mapTop = hudR > CW - 104 ? hudB + 8 : base;          // на вузькому екрані мінікарта стає під табло
+  if (hudL < 62) tools.style.top = (hudB + 10) + 'px'; // і кнопки теж
 }
 // масштаб за площею екрана: і на телефоні, і на комп'ютері видно однаковий шмат майданчика
 const viewScale = (w, h) => clamp(Math.sqrt(w * h) / (VIEW_SPAN * .78), 3.4, 12);
 
-// тло без сітки: бліді хмари й розсип цяток; плитка безшовна, тож камера може летіти куди завгодно
-function makeTile(u) {
-  tileU = u;
-  const px = Math.max(64, Math.round(TILE * u * DPR));
-  tile = document.createElement('canvas');
-  tile.width = tile.height = px;
-  const g = tile.getContext('2d');
-  g.scale(px / TILE, px / TILE);
+// Увесь майданчик (підлога без сітки з блідими хмарами й цятками, край) малюється один раз у пам'ять.
+// Далі кожен кадр — це одне копіювання готової картинки замість десятків операцій з обрізанням.
+function makeArena(u) {
+  arenaU = u; arenaDpr = DPR;
+  const k = u * DPR, R = ARENA * k, pad = Math.ceil(k * 2.5), size = Math.ceil(R * 2 + pad * 2);
+  arena = document.createElement('canvas');
+  arena.width = arena.height = Math.min(size, 4096);
+  const g = arena.getContext('2d');
+  const sc = arena.width / size;                       // на велетенських екранах картинка трохи менша й розтягується
+  g.scale(sc, sc);
+  g.translate(size / 2, size / 2);
+  arena._scale = sc;
+  // край майданчика з «незведеним друком» двох фарб
+  const off = k * .55;
+  g.lineWidth = k * 1.5;
+  g.strokeStyle = COL[1].main; g.beginPath(); g.arc(-off, -off, R, 0, TAU); g.stroke();
+  g.strokeStyle = COL[0].main; g.beginPath(); g.arc(off, off, R, 0, TAU); g.stroke();
+  g.save();
+  g.beginPath(); g.arc(0, 0, R, 0, TAU); g.clip();
   g.fillStyle = '#f6f5fb';
-  g.fillRect(0, 0, TILE, TILE);
+  g.fillRect(-R, -R, R * 2, R * 2);
+  g.scale(k, k);
   let seed = 20261004;
   const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-  const dot = (x, y, r) => {
-    for (const ox of [-TILE, 0, TILE]) for (const oy of [-TILE, 0, TILE]) {
-      if (x + ox < -r || x + ox > TILE + r || y + oy < -r || y + oy > TILE + r) continue;
-      g.beginPath(); g.arc(x + ox, y + oy, r, 0, TAU); g.fill();
-    }
-  };
   const tints = ['#ecebf8', '#ecebf8', '#ecebf8', '#fbecf4', '#e9f0fd'];
+  const blobs = [], dots = [];
   for (let b = 0; b < 8; b++) {
-    const cx = rnd() * TILE, cy = rnd() * TILE;
-    g.fillStyle = tints[Math.floor(rnd() * tints.length)];
-    const n = 3 + Math.floor(rnd() * 3);
-    for (let k = 0; k < n; k++) dot(cx + (rnd() - .5) * 13, cy + (rnd() - .5) * 8, 3.5 + rnd() * 4.5);
+    const cx = rnd() * TILE, cy = rnd() * TILE, tint = tints[Math.floor(rnd() * tints.length)], n = 3 + Math.floor(rnd() * 3);
+    for (let q = 0; q < n; q++) blobs.push([cx + (rnd() - .5) * 13, cy + (rnd() - .5) * 8, 3.5 + rnd() * 4.5, tint]);
   }
-  g.fillStyle = '#cfd1ef';
-  for (let i = 0; i < 110; i++) dot(rnd() * TILE, rnd() * TILE, .14 + rnd() * .32);
+  for (let i = 0; i < 110; i++) dots.push([rnd() * TILE, rnd() * TILE, .14 + rnd() * .32]);
+  const span = Math.ceil(ARENA / TILE) + 1;
+  for (const pass of [blobs, dots]) for (let ti = -span; ti < span; ti++) for (let tj = -span; tj < span; tj++) for (const d of pass) {
+    const x = d[0] + ti * TILE, y = d[1] + tj * TILE, lim = ARENA + d[2];
+    if (x * x + y * y > lim * lim) continue;
+    g.fillStyle = d[3] || '#cfd1ef';
+    g.beginPath(); g.arc(x, y, d[2], 0, TAU); g.fill();
+  }
+  g.restore();
+  g.lineWidth = Math.max(2.5 * DPR, k * .5); g.strokeStyle = INK;
+  g.beginPath(); g.arc(0, 0, R, 0, TAU); g.stroke();
 }
 
 function trailAt(tr, f) {
@@ -819,7 +1026,7 @@ function drawSnake(vs, idx, ps, now, aim) {
   if (!tr.length) return;
   const col = COL[idx];
   const pal = { main: col.main, alt: col.alt, light: col.light, ink: INK };
-  const bs = V.bumps.filter(b => b.i === idx);
+  const bs = V.bumps.length ? V.bumps.filter(b => b.i === idx) : V.bumps;
   const at = f => {               // позиція ланки з хвилею від удару
     const p = trailAt(tr, f);
     for (const b of bs) {
@@ -893,33 +1100,25 @@ function stepParts(dt) {
 }
 
 // один вид на світ: (vx,vy,vw,vh) — прямокутник на екрані, cam — за ким летить камера
-function drawWorld(vx, vy, vw, vh, camIdx, now, poses) {
-  U = viewScale(vw, vh);
-  if (!tile || tileU !== U) makeTile(U);
-  const cam = poses ? poses[camIdx] : { x: 0, y: 0 };
+function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
+  opt = opt || {};
+  U = opt.fit ? Math.min(vw, vh) / (2 * ARENA + 14) : viewScale(vw, vh);
+  if (!arena || arenaU !== U || arenaDpr !== DPR) makeArena(U);
+  const cam = poses && !opt.fit ? poses[camIdx] : { x: 0, y: 0 };
   ctx.save();
   ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
   ctx.fillStyle = '#d6d4e8';
   ctx.fillRect(vx, vy, vw, vh);
   const sx = shake > .4 ? (Math.random() - .5) * 2 * shake : 0, sy = shake > .4 ? (Math.random() - .5) * 2 * shake : 0;
-  ctx.translate(vx + vw / 2 - cam.x * U + sx, vy + vh / 2 - cam.y * U + sy);
+  const acx = vx + vw / 2 - cam.x * U + sx, acy = vy + vh / 2 - cam.y * U + sy;   // де на екрані центр майданчика
   vis = { x0: cam.x - vw / 2 / U, x1: cam.x + vw / 2 / U, y0: cam.y - vh / 2 / U, y1: cam.y + vh / 2 / U };
-
-  // край майданчика з «незведеним друком» двох фарб
-  const AR = ARENA * U, off = U * .55;
-  ctx.lineWidth = U * 1.5;
-  ctx.strokeStyle = COL[1].main; ctx.beginPath(); ctx.arc(-off, -off, AR, 0, TAU); ctx.stroke();
-  ctx.strokeStyle = COL[0].main; ctx.beginPath(); ctx.arc(off, off, AR, 0, TAU); ctx.stroke();
-  // підлога
-  ctx.save();
-  ctx.beginPath(); ctx.arc(0, 0, AR, 0, TAU); ctx.clip();
-  const TS = TILE * U;
-  for (let i = Math.floor(vis.x0 / TILE); i <= Math.floor(vis.x1 / TILE); i++)
-    for (let j = Math.floor(vis.y0 / TILE); j <= Math.floor(vis.y1 / TILE); j++)
-      ctx.drawImage(tile, i * TS, j * TS, TS + 1, TS + 1);
-  ctx.restore();
-  ctx.lineWidth = Math.max(2.5, U * .5); ctx.strokeStyle = INK;
-  ctx.beginPath(); ctx.arc(0, 0, AR, 0, TAU); ctx.stroke();
+  // готовий майданчик копіюємо піксель у піксель
+  const aw = arena.width / arena._scale;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (arena._scale === 1) ctx.drawImage(arena, Math.round(acx * DPR - aw / 2), Math.round(acy * DPR - aw / 2));
+  else ctx.drawImage(arena, Math.round(acx * DPR - aw / 2), Math.round(acy * DPR - aw / 2), aw, aw);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.translate(acx, acy);
 
   if (poses) {
     // шматочки; ті, що щойно відірвались від хвоста, зсуваються від місця удару
@@ -940,7 +1139,8 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses) {
     const aims = [null, null];
     if (V.phase === 'play' && !V.z) {
       if (mode === 'guest') aims[1] = myAim;
-      else if (G) { aims[0] = G.inp[0]; if (mode === 'local') aims[1] = G.inp[1]; }
+      else if (mode === 'host') aims[0] = myAim;
+      else if (G) { aims[0] = G.inp[0]; aims[1] = G.inp[1]; }
     }
     const order = camIdx === 0 ? [1, 0] : [0, 1];      // свій дракон зверху
     for (const i of order) drawSnake(V.s[i], i, poses[i], now, aims[i]);
@@ -954,24 +1154,28 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses) {
   }
   ctx.restore();
 
-  if (!poses) return;
+  if (!poses || opt.fit) return;
   ctx.save();
   ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
   // стрілка на краю екрана: де зараз інший дракон
-  const it = vy < 1 ? insetTop : 0;
   const o = poses[1 - camIdx], ox = (o.x - cam.x) * U, oy = (o.y - cam.y) * U, pad = 26;
   if (Math.abs(ox) > vw / 2 - 8 || Math.abs(oy) > vh / 2 - 8) {
     const k = Math.min((vw / 2 - pad) / Math.abs(ox || 1e-6), (vh / 2 - pad) / Math.abs(oy || 1e-6));
     const ang = Math.atan2(oy, ox);
     ctx.save();
-    ctx.translate(vx + vw / 2 + ox * k, Math.max(vy + it + pad, vy + vh / 2 + oy * k)); ctx.rotate(ang);
+    const ax = vx + vw / 2 + ox * k;
+    let ay = vy + vh / 2 + oy * k;
+    if (vy < 1 && ax > hudL - 20 && ax < hudR + 20) ay = Math.max(ay, hudB + pad);   // не ховаємо стрілку під табло
+    ctx.translate(ax, ay); ctx.rotate(ang);
     ctx.fillStyle = COL[1 - camIdx].main; ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-9, 11); ctx.lineTo(-3, 0); ctx.lineTo(-9, -11); ctx.closePath();
     ctx.fill(); ctx.stroke();
     ctx.restore();
   }
   // мінікарта
-  const MR = clamp(Math.min(vw, vh) * .085, 26, 40), mx = vx + vw - MR - 12, my = vy + it + MR + (it ? 6 : 12), ms = MR / ARENA;
+  const MR = clamp(Math.min(vw, vh) * .085, 26, 40), ms = MR / ARENA;
+  const mx = opt.map === 'bl' ? vx + MR + 12 : vx + vw - MR - 12;
+  const my = opt.map === 'bl' || opt.map === 'br' ? vy + vh - MR - 12 : vy + MR + (vy < 1 ? mapTop : 12);
   ctx.fillStyle = 'rgba(246,245,251,.9)'; ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(mx, my, MR, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#e2ad00';
@@ -995,25 +1199,35 @@ function frame(now) {
   if (!CW) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1;
+  drainView(now);
   stepParts(dt);
   shake *= Math.pow(.86, dt / 16.7);
   for (let i = fly.length - 1; i >= 0; i--) if (now - fly[i].t0 > 150) fly.splice(i, 1);
   for (let i = V.bumps.length - 1; i >= 0; i--) if (now - V.bumps[i].t0 > 700) V.bumps.splice(i, 1);
-  if (!V.s) { drawWorld(0, 0, CW, CH, 0, now, null); return; }
+  if (!V.s) {                      // нерухома сцена (кімната до старту): малюємо один раз, а не 60 разів на секунду
+    if (!redraw && !parts.length) return;
+    redraw = false;
+    drawWorld(0, 0, CW, CH, 0, now, null, { fit: mode === 'menu' });
+    return;
+  }
   // малюємо на крок-два позаду останнього отриманого стану, щоб рух був рівний
-  const want = mode === 'guest' ? (net && net.via === 'p2p' ? 2 : 4) : 1;
+  if (linked && net && dcLive(net) && !dcFresh(net) && now - net.nudged > 400) {   // прямий канал замовк: одразу озиваємось через сервери
+    net.nudged = now; net.pingAt = now; netSend(pingMsg(now));
+  }
+  const want = mode === 'guest' || mode === 'host' ? (net && net.via === 'p2p' ? 2 : 4) : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
   let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delayCur);
   back = clamp(back, 0, 6);
   const poses = V.s.map(vs => pose(vs, back));
+  if (V.demo) { drawWorld(0, 0, CW, CH, 0, now, poses, { fit: true }); return; }
   if (mode === 'local') {          // на одному екрані в кожного своя половина
     if (CW >= CH) {
       const hw = Math.floor(CW / 2);
-      drawWorld(0, 0, hw, CH, 0, now, poses); drawWorld(hw, 0, CW - hw, CH, 1, now, poses);
+      drawWorld(0, 0, hw, CH, 0, now, poses, { map: 'bl' }); drawWorld(hw, 0, CW - hw, CH, 1, now, poses, { map: 'br' });
       ctx.fillStyle = INK; ctx.fillRect(hw - 1.5, 0, 3, CH);
     } else {
       const hh = Math.floor(CH / 2);
-      drawWorld(0, 0, CW, hh, 0, now, poses); drawWorld(0, hh, CW, CH - hh, 1, now, poses);
+      drawWorld(0, 0, CW, hh, 0, now, poses, { map: 'br' }); drawWorld(0, hh, CW, CH - hh, 1, now, poses, { map: 'br' });
       ctx.fillStyle = INK; ctx.fillRect(0, hh - 1.5, CW, 3);
     }
   } else {
@@ -1032,6 +1246,7 @@ function audio() {
   } catch (e) {}
   return AC;
 }
+window.__beep = (f, dur, type, vol, slide) => beep(f, dur, type, vol, slide);
 function beep(f, dur, type, vol, slide) {
   if (muted) return;
   const ac = audio();
@@ -1055,40 +1270,74 @@ const PANELS = ['menu', 'room', 'over'];
 function show(name) {
   for (const p of PANELS) $('p-' + p).hidden = p !== name;
   $('overlay').hidden = !name;
+  redraw = true;
+  $('overlay').classList.toggle('soft', name === 'menu');
   document.body.classList.toggle('menu-open', !!name);
-  if (name) releaseInput();
-  else { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }
+  if (name) {
+    releaseInput();
+    $('coach').hidden = true;
+  } else { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }
+  layoutInsets();
   placeTouchUi();
 }
-const CONTROLS = TOUCH
+const CONTROLS = (TOUCH
   ? 'Керування: торкнись екрана будь-де й веди пальцем туди, куди їхати.'
-  : 'Керування: дракон їде туди, де курсор миші. Можна й стрілками чи W A S D.';
+  : 'Керування: дракон їде туди, де курсор миші. Можна й стрілками чи W A S D.')
+  + ' Умови рівні: затримку мережі гра робить однаковою для обох.';
 $('join-controls').textContent = CONTROLS;
 if (TOUCH) $('b-local').hidden = true;   // режим «одна клавіатура на двох» на телефоні не має сенсу
+// правила в картинках: одна заготовка для меню й кімнати
+for (const id of ['menu-how', 'room-how']) $(id).appendChild($('tpl-how').content.cloneNode(true));
+
 function setChrome() {
-  $('tag0').textContent = mode === 'host' ? 'це ти' : mode === 'local' ? 'W A S D' : '';
-  $('tag1').textContent = mode === 'guest' ? 'це ти' : mode === 'local' ? 'стрілки' : '';
-  $('hint').textContent =
-    mode === 'local' ? 'Жаринка кермує клавішами W A S D, Хвилька — стрілками.' :
-    inRoom() ? (TOUCH ? 'Веди пальцем будь-де на екрані.' : 'Курсор задає напрямок. Можна й стрілками чи W A S D.') : '';
+  $('tag0').textContent = mode === 'host' ? 'ти' : mode === 'local' ? 'W A S D' : '';
+  $('tag1').textContent = mode === 'guest' ? 'ти' : mode === 'local' ? 'стрілки' : '';
   $('b-quit').hidden = mode === 'menu';
   cv.style.cursor = (mode === 'host' || mode === 'guest') && !TOUCH ? 'crosshair' : '';
+}
+
+// підказка про керування: з'являється на початку першого раунду й зникає, щойно ти поведеш дракона
+let coachTimer = null, coached = false;
+try { coached = !!localStorage.getItem('dva-drakony-coach'); } catch (e) {}
+function coachOnce() {
+  if (coached && mode !== 'local') return;
+  const el = $('coach');
+  el.textContent = mode === 'local' ? 'Жаринка кермує клавішами W A S D, Хвилька стрілками'
+    : TOUCH ? 'Торкнись екрана й веди пальцем: дракон поїде туди' : 'Веди курсором, і дракон поїде за ним. Можна й стрілками';
+  el.hidden = false;
+  clearTimeout(coachTimer);
+  coachTimer = setTimeout(() => { el.hidden = true; }, 8000);
+}
+function coachDone() {
+  if (coached) return;
+  coached = true;
+  try { localStorage.setItem('dva-drakony-coach', '1'); } catch (e) {}
+  clearTimeout(coachTimer);
+  coachTimer = setTimeout(() => { $('coach').hidden = true; }, 1200);
 }
 const roomStatus = t => { $('room-status').textContent = t; };
 
 // кімната виглядає однаково для обох: спершу посилання, а коли обоє на місці — кнопка старту
 function roomView(state) {
   const waiting = state === 'waiting', ready = state === 'ready';
-  $('room-lead').textContent =
-    ready ? (mode === 'host' ? 'Обоє на місці. Твій дракон рожевий, його звати Жаринка.' : 'Обоє на місці. Твій дракон синій, його звати Хвилька.') :
-    waiting ? 'Це посилання одне на двох. Надішли його другому гравцю або просто зачекай: гра з’єднає вас, щойно він його відкриє.' :
-    'Посилання одне на двох: хто відкрив першим, чекає тут на другого.';
+  $('room-title').textContent = ready ? 'Обоє на місці' : 'Кімната для двох';
+  const lead = $('room-lead');
+  lead.textContent = '';
+  if (ready) {
+    const chip = document.createElement('i');
+    chip.className = 'chip ' + (mode === 'host' ? 'p' : 'b');
+    lead.append(chip, mode === 'host' ? 'Твій дракон рожевий, його звати Жаринка.' : 'Твій дракон синій, його звати Хвилька.');
+  } else {
+    lead.textContent = waiting
+      ? 'Це посилання одне на двох. Надішли його другому гравцю: гра з’єднає вас, щойно він його відкриє.'
+      : 'Посилання одне на двох: хто відкрив першим, чекає тут на другого.';
+  }
   $('link').hidden = !waiting; $('link-btns').hidden = !waiting;
-  $('room-rules').hidden = !ready; $('join-controls').hidden = !ready;   // правила показуємо перед стартом, щоб вікно лишалось компактним
+  $('room-how').hidden = !ready; $('join-controls').hidden = !ready;   // правила показуємо перед стартом, щоб вікно лишалось компактним
   $('file-note').hidden = !(waiting && location.protocol === 'file:');
   $('b-go').hidden = !ready; $('b-go').disabled = !ready;
   if (waiting) roomStatus('Чекаю на другого гравця…');
-  if (ready) roomStatus('Гру починає той, хто перший натисне кнопку.');
+  if (ready) roomStatus('Почати може будь-хто з вас.');
 }
 
 // не даємо екрану згаснути під час гри й очікування
@@ -1103,10 +1352,11 @@ async function keepAwake() {
 document.addEventListener('visibilitychange', () => {
   const hidden = document.visibilityState !== 'visible';
   // гра стає на паузу, поки хтось із гравців не на сторінці
-  if (mode === 'host' || mode === 'local') setPause('h', hidden);
+  if (mode === 'host' || mode === 'local' || mode === 'menu') setPause('h', hidden);
   else if (mode === 'guest' && conn && conn.open) { try { conn.send({ t: 'pz', v: hidden }); } catch (e) {} }
   if (hidden) { releaseInput(); return; }
   if (mode !== 'menu') keepAwake();
+  kickNet();
 });
 
 function teardown() {
@@ -1119,6 +1369,7 @@ function teardown() {
   setText('timer', '2:00');
   setText('s0', '0'); setText('s1', '0');
   document.title = TITLE;
+  series = [0, 0];
   showVia();
 }
 
@@ -1128,6 +1379,7 @@ function toMenu() {
   setAddress(false);
   setChrome();
   show('menu');
+  startDemo();
 }
 
 function startLocal() {
@@ -1170,7 +1422,18 @@ function makeCode() {
   let s = ''; for (let i = 0; i < 6; i++) s += abc[Math.floor(Math.random() * abc.length)];
   return s;
 }
-const me = makeCode() + makeCode();      // ім'я цієї вкладки в кімнаті
+// Ім'я гравця складається з двох частин: постійної (цей браузер) і разової (ця вкладка).
+// За постійною частиною кімната впізнає того самого гравця, коли він закрив вкладку й відкрив посилання знову.
+function playerId() {
+  try {
+    let p = localStorage.getItem('dva-drakony-pid');
+    if (!p) { p = makeCode() + makeCode(); localStorage.setItem('dva-drakony-pid', p); }
+    return p;
+  } catch (e) { return makeCode() + makeCode(); }
+}
+const me = (window.__pid || playerId()) + '.' + makeCode();
+const samePlayer = (a, b) => !!a && !!b && a.split('.')[0] === b.split('.')[0];
+const peerQuiet = () => !!(net && net.byeAt) || performance.now() - lastSeen > 2000;   // другий гравець мовчить або закрив вкладку: його місце можна віддати
 const roomUrl = () => location.href.split(/[?#]/)[0] + '?room=' + room;
 function setAddress(withRoom) {          // адресний рядок показує те саме посилання, яким ділишся
   try { history.replaceState(null, '', withRoom ? roomUrl() : location.href.split(/[?#]/)[0]); } catch (e) {}
@@ -1221,104 +1484,158 @@ async function enterRoom() {
   netStart();
 }
 
+function openBroker(N, i) {
+  let c;
+  try {
+    c = window.mqtt.connect(BROKERS[i], {
+      clientId: 'dd-' + me + '-' + i + '-' + Date.now().toString(36),
+      clean: true, keepalive: 5, reconnectPeriod: 1000, connectTimeout: 6000
+    });
+  } catch (e) { return; }
+  c._ok = false; c._echo = false; c._rx = performance.now();
+  N.clients[i] = c;
+  c.on('connect', () => {
+    if (net !== N || N.clients[i] !== c) return;
+    c.subscribe(N.topic, { qos: 0 }, err => {
+      if (net !== N || N.clients[i] !== c || err) return;
+      c._ok = true; c._rx = performance.now();
+      if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); discover(N); }
+    });
+  });
+  c.on('message', (t, p) => { if (net === N && N.clients[i] === c) { c._rx = performance.now(); onRaw(N, p, c); } });
+  c.on('close', () => { c._ok = false; });
+  c.on('error', () => {});
+}
+// з'єднання із сервером зависло (так буває після зміни мережі): закриваємо й відкриваємо нове
+function rebuildBroker(N, i) {
+  const old = N.clients[i];
+  N.clients[i] = null;
+  try { if (old) old.end(true); } catch (e) {}
+  openBroker(N, i);
+}
+
 function netStart() {
   const N = net = {
     topic: 'dva-drakony/v1/' + room, clients: [], seq: 0, last: {}, ready: false,
-    role: null, other: null, via: 'relay',
-    pc: null, dc: null, iceQ: [], q: [], qTimer: null,
+    role: null, other: null, via: 'relay', weak: false, byeAt: 0,
+    pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, rtt: null, rtts: [], viaAt: 0,
+    iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0,
     whoTimer: null, annTimer: null, helloTimer: null, rtcTimer: null, failTimer: null, fullTimer: null
   };
-  BROKERS.forEach((url, i) => {
-    let c;
-    try {
-      c = window.mqtt.connect(url, {
-        clientId: 'dd-' + me + '-' + i + '-' + Date.now().toString(36),
-        clean: true, keepalive: 20, reconnectPeriod: 2500, connectTimeout: 8000
-      });
-    } catch (e) { return; }
-    c._ok = false;
-    N.clients.push(c);
-    c.on('connect', () => {
-      if (net !== N) return;
-      c.subscribe(N.topic, { qos: 0 }, err => {
-        if (net !== N || err) return;
-        c._ok = true;
-        if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); discover(N); }
-      });
-    });
-    c.on('message', (t, p) => { if (net === N) onRaw(N, p); });
-    c.on('close', () => { c._ok = false; });
-    c.on('error', () => {});
-  });
+  BROKERS.forEach((url, i) => openBroker(N, i));
   N.failTimer = setTimeout(() => { if (net === N && !N.ready) roomStatus(NO_SIGNAL); }, 9000);
 }
+
+// мережа щойно змінилась або сторінка повернулась: одразу перевіряємо сервери, не чекаючи тайм-аутів
+function kickNet() {
+  const N = net;
+  if (!N) return;
+  const t0 = performance.now();
+  N.clients.forEach(c => { try { if (c && !c.connected) c.reconnect(); } catch (e) {} });
+  pubOn(N, { t: 'k', ts: performance.now() });   // живий сервер одразу поверне нам це повідомлення
+  setTimeout(() => {
+    if (net !== N) return;
+    N.clients.forEach((c, i) => { if (c && c._ok && c._echo && c._rx < t0) rebuildBroker(N, i); });
+  }, 2000);
+  if (linked && N.role === 'guest') N.rtcNext = Math.min(N.rtcNext, t0 + 1500);   // і пряме з'єднання пробуємо заново
+}
+addEventListener('online', kickNet);
+try { if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', kickNet); } catch (e) {}
 
 function netStop() {
   const N = net;
   net = null; linked = false; conn = null;
   if (!N) return;
-  try { pubOn(N, { t: 'bye' }); } catch (e) {}
+  try { pubOn(N, { t: 'bye', menu: 1 }); } catch (e) {}   // вийшли в меню: це остаточно
   for (const k of ['whoTimer', 'annTimer', 'helloTimer', 'rtcTimer', 'failTimer', 'fullTimer', 'qTimer']) { clearTimeout(N[k]); clearInterval(N[k]); }
   closeRtc(N);
-  for (const c of N.clients) { try { c.end(true); } catch (e) {} }
+  for (const c of N.clients) { try { if (c) c.end(true); } catch (e) {} }
 }
-addEventListener('pagehide', () => { if (net) { try { pubOn(net, { t: 'bye' }); } catch (e) {} } });
+addEventListener('pagehide', () => {     // закриваємо вкладку: прощаємось усіма шляхами, якими встигнемо
+  if (!net) return;
+  try { if (linked) netSend({ t: 'bye' }); } catch (e) {}
+  try { pubOn(net, { t: 'bye' }); } catch (e) {}
+});
 
 // надсилає повідомлення всім серверам-посередникам одразу; отримувач відкине дублікати за номером
 function pubOn(N, obj) {
   obj.f = me; obj.q = ++N.seq;
   const s = JSON.stringify(obj);
-  for (const c of N.clients) if (c._ok) { try { c.publish(N.topic, s, { qos: 0 }); } catch (e) {} }
+  for (const c of N.clients) if (c && c._ok) { try { c.publish(N.topic, s, { qos: 0 }); } catch (e) {} }
 }
 const pub = obj => { if (net) pubOn(net, obj); };
+// ігрові дані шлемо не всім серверам, а двом найшвидшим: менше трафіку, запас на випадок збою лишається
+function pubData(N, obj) {
+  obj.f = me; obj.q = ++N.seq;
+  const s = JSON.stringify(obj);
+  const live = N.clients.filter(c => c && c._ok).sort((a, b) => (a._lat == null ? 1e9 : a._lat) - (b._lat == null ? 1e9 : b._lat));
+  for (let i = 0; i < live.length && i < 2; i++) { try { live[i].publish(N.topic, s, { qos: 0 }); } catch (e) {} }
+}
 
-function onRaw(N, p) {
+function onRaw(N, p, c) {
   let m;
   try { m = JSON.parse(typeof p === 'string' ? p : new TextDecoder().decode(p)); } catch (e) { return; }
-  if (!m || typeof m !== 'object' || m.f === me || typeof m.f !== 'string') return;
+  if (!m || typeof m !== 'object' || typeof m.f !== 'string') return;
+  if (m.f === me) {                    // наша власна «луна»: сервер живий, заодно міряємо, який швидший
+    c._echo = true;
+    if (m.t === 'k' && typeof m.ts === 'number') { const d = performance.now() - m.ts; c._lat = c._lat == null ? d : c._lat * .7 + d * .3; }
+    return;
+  }
   if (m.to && m.to !== me) return;
-  if (typeof m.q === 'number') {         // те саме повідомлення могло прийти через два сервери
-    if (m.q <= (N.last[m.f] || 0)) return;
-    N.last[m.f] = m.q;
+  if (typeof m.q === 'number') {         // те саме повідомлення могло прийти через два сервери: пропускаємо лише перший примірник
+    let w = N.last[m.f];
+    if (!w) w = N.last[m.f] = { set: new Set(), list: [] };
+    if (w.set.has(m.q)) return;
+    w.set.add(m.q); w.list.push(m.q);
+    if (w.list.length > 256) w.set.delete(w.list.shift());
   }
   const from = m.f;
   switch (m.t) {
     case 'who':                          // хтось зайшов і питає, чи є тут хто
-      if (N.role === 'host') pub(!linked || N.other === from ? { t: 'host', to: from } : { t: 'full', to: from });
-      else if (N.role === null && me < from) { becomeHost(N); pub({ t: 'host', to: from }); }
+      if (N.role === 'host') {
+        // місце другого гравця вільне, або це він сам повернувся, або той, хто його займав, замовк
+        const free = !linked || from === N.other || samePlayer(from, N.other) || peerQuiet();
+        pub({ t: free ? 'host' : 'full', to: from });
+      } else if (N.role === 'guest' && linked && samePlayer(from, N.other)) {
+        peerGone();                      // перший гравець перезайшов: кімнату тепер тримаємо ми
+        pub({ t: 'host', to: from });
+      } else if (N.role === null && me < from) { becomeHost(N); pub({ t: 'host', to: from }); }
       break;
     case 'host':                         // у кімнаті вже є перший гравець
+      if (N.role === 'guest' && linked && from !== N.other && samePlayer(from, N.other)) peerGone();   // наш перший гравець перезайшов
       if (N.role === null || (N.role === 'guest' && !linked && N.other !== from)) becomeGuest(N, from);
       else if (N.role === 'host' && !linked) {       // двоє вважають себе першими: поступається той, чиє ім'я «більше»
         if (from < me) becomeGuest(N, from); else pub({ t: 'host', to: from });
       }
       break;
     case 'full':
-      if (linked || N.role === 'host') break;
+      if (linked || N.role === 'host' || N.role === 'out') break;
       roomView('opening');
       roomStatus('У цій кімнаті вже грають двоє. Перевіряю ще раз…');
       clearTimeout(N.whoTimer); clearInterval(N.helloTimer); clearTimeout(N.fullTimer);
-      N.fullTimer = setTimeout(() => { if (net === N && !linked) discover(N); }, 4000);
+      N.fullTimer = setTimeout(() => { if (net === N && !linked) discover(N); }, 2000);
       break;
     case 'hello':                        // другий гравець вітається
       if (N.role !== 'host') break;
-      if (!linked || N.other === from) {
-        N.other = from;
-        pub({ t: 'hi', to: from });
-        if (!linked) linkUp(N);
-      } else pub({ t: 'full', to: from });
+      if (!linked) { N.other = from; pub({ t: 'hi', to: from }); linkUp(N); }
+      else if (from === N.other) pub({ t: 'hi', to: from });
+      else if (samePlayer(from, N.other) || peerQuiet()) relink(N, from);   // той самий гравець у новій вкладці або заміна тому, хто зник
+      else pub({ t: 'full', to: from });
       break;
     case 'hi':
-      if (N.role === 'guest' && N.other === from && !linked) { linkUp(N); startRtc(N); }
+      if (N.role === 'guest' && N.other === from && !linked) linkUp(N);
+      break;
+    case 'moved':                        // наше місце зайняла інша вкладка цього ж гравця
+      if (from === N.other) leaveQuietly(N, 'Цю гру відкрито в іншій вкладці або на іншому пристрої.');
       break;
     case 'd':                            // ігрові дані через сервер-посередник
-      if (linked && from === N.other && Array.isArray(m.d)) for (const x of m.d) deliver(x);
+      if (linked && from === N.other && Array.isArray(m.d)) for (const x of m.d) deliver(x, true);
       break;
     case 'rtc':
       if (linked && from === N.other) onRtc(N, m);
       break;
     case 'bye':
-      if (from === N.other) peerGone();
+      if (from === N.other) byeFrom(N, !!m.menu);
       break;
   }
 }
@@ -1371,6 +1688,8 @@ function linkUp(N) {                     // обоє в кімнаті
   clearInterval(N.helloTimer); clearInterval(N.annTimer);
   lastSeen = performance.now();
   lastK = 0; lastAimSeq = 0; syncAsked = 0;
+  N.weak = false; N.byeAt = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = [];
   roomView('ready');
   if (!G) show('room');
   showVia();
@@ -1378,11 +1697,56 @@ function linkUp(N) {                     // обоє в кімнаті
   beep(660, .1); setTimeout(() => beep(880, .16), 120);
 }
 
+// Другий гравець попрощався. Якщо він просто закрив вкладку посеред раунду, тримаємо для нього
+// місце й раунд ще 20 секунд: раптом це перезавантаження чи випадковість. Вихід у меню — остаточний.
+function byeFrom(N, final) {
+  if (!linked) return;
+  if (final || mode !== 'host' || !G || G.demo || G.phase === 'over') { peerGone(); return; }
+  N.byeAt = performance.now();
+  closeRtc(N);
+  setWeak(N, true);
+}
+
+// Другий гравець повернувся в новій вкладці (або його замінив інший, поки той мовчав).
+// Раунд не скидається: новій вкладці надсилаємо повну картину, і гра продовжується з короткого відліку.
+function relink(N, from) {
+  const old = N.other;
+  if (old && old !== from) pub({ t: 'moved', to: old });
+  closeRtc(N);
+  N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
+  N.other = from; N.byeAt = 0;
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rtt = null; N.rtts = [];
+  lastAimSeq = 0;
+  lastSeen = performance.now();
+  if (G && !G.demo) { G.needInit = true; G.inp[1] = null; G.pz.g = false; }
+  pub({ t: 'hi', to: from });
+  if (N.weak) setWeak(N, false);
+  else if (G && G.phase !== 'over') emit([]);
+  showVia();
+}
+
+// нас замінила інша вкладка: тихо виходимо з гри й більше не шукаємо кімнату
+function leaveQuietly(N, text) {
+  linked = false; conn = null;
+  N.role = 'out'; N.weak = false;
+  for (const k of ['whoTimer', 'annTimer', 'helloTimer', 'fullTimer']) { clearTimeout(N[k]); clearInterval(N[k]); }
+  closeRtc(N);
+  stopLoop();
+  G = null;
+  resetView();
+  document.title = TITLE;
+  roomView('opening');
+  show('room');
+  roomStatus(text);
+  showVia();
+}
+
 // другий гравець зник: хто лишився, той тримає кімнату далі
 function peerGone() {
   const N = net;
   if (!N || !linked) return;
   linked = false; conn = null;
+  N.weak = false; N.byeAt = 0;
   closeRtc(N);
   N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
   stopLoop();
@@ -1396,59 +1760,119 @@ function peerGone() {
 }
 
 /* ----- доставка ігрових повідомлень ----- */
+// Прямий канал вважаємо живим, лише поки ним справді щось приходить.
+// Коли той, хто рахує гру, шле стан 40 разів на секунду, тиша в третину секунди вже означає обрив.
+// Прямих каналів два: швидкий (без повторних надсилань, для стану й керма) і надійний (для команд).
+const FAST = { s: 1, a: 1, p: 1, q: 1 };
+const dcLive = N => !!(N.dcF && N.dcC && N.dcF.readyState === 'open' && N.dcC.readyState === 'open');
+function dcHear(N) {              // чи чуємо ми другого гравця прямим каналом
+  if (!dcLive(N)) return false;
+  const limit = mode === 'guest' && !V.z && (V.phase === 'play' || V.phase === 'count') ? 350 : 1000;
+  return performance.now() - N.dcSeen < limit;
+}
+// прямим каналом користуємось, лише коли чуємо ним самі і другий гравець не скаржився, що не чує нас
+const dcFresh = N => dcHear(N) && performance.now() - N.suspect > 1500;
+
 function netSend(m) {
   const N = net;
   if (!N || !linked) return;
-  if (N.dc && N.dc.readyState === 'open') {          // пряме з'єднання, якщо воно є
-    try { N.dc.send(JSON.stringify(m)); return; } catch (e) {}
+  const fast = FAST[m.t] === 1;
+  if (!fast) m.x = ++N.tx;                           // команди нумеруємо: отримувач відкине повтор, що прийшов іншим шляхом
+  if (dcLive(N)) {
+    try { (fast ? N.dcF : N.dcC).send(JSON.stringify(m)); } catch (e) {}
+    if (dcFresh(N)) return;                          // прямий канал живий: цього досить
   }
-  N.q.push(m);                                       // інакше через сервер, по кілька повідомлень за раз
-  if ((m.t !== 's' && m.t !== 'p') || N.q.length >= 2) flushRelay(N);
+  // прямого каналу немає або він замовк (наприклад, змінилась мережа): шлемо ще й через сервери
+  N.q.push(m);
+  if (m.t !== 's' || N.q.length >= 2) flushRelay(N);
   else if (!N.qTimer) N.qTimer = setTimeout(() => flushRelay(N), 45);
 }
 function flushRelay(N) {
   clearTimeout(N.qTimer); N.qTimer = null;
   if (!N.q.length || !N.other) return;
   const d = N.q; N.q = [];
-  if (net === N) pubOn(N, { t: 'd', to: N.other, d });
+  if (net === N) pubData(N, { t: 'd', to: N.other, d });
 }
-function deliver(m) {
-  if (!linked || !m || typeof m !== 'object') return;
-  lastSeen = performance.now();
+function hostAim(m) {             // кермо другого гравця: беремо лише новіше за те, що вже маємо
+  if (typeof m.i === 'number') { if (m.i <= lastAimSeq) return; lastAimSeq = m.i; }
+  if (G && G.phase !== 'over' && typeof m.a === 'number' && isFinite(m.a)) G.inp[1] = m.a;
+}
+function deliver(m, viaRelay) {
+  const N = net;
+  if (!N || !linked || !m || typeof m !== 'object') return;
+  const now = performance.now();
+  lastSeen = now;
+  if (m.t === 'bye') { byeFrom(N, false); return; }  // другий гравець закрив вкладку
+  N.byeAt = 0;
+  let isNew = true;                                  // чи не приходило це вже іншим шляхом
+  if (FAST[m.t] === 1) {
+    if (m.t === 's') isNew = !!m.g && m.g.k > lastK;
+    else if (m.t === 'p') { isNew = typeof m.ts === 'number' && m.ts > N.pts; if (isNew) N.pts = m.ts; }
+    else if (m.t === 'a') isNew = typeof m.i === 'number' && m.i > lastAimSeq;
+    else isNew = false;
+  } else {                                           // команда: кожну виконуємо рівно один раз
+    if (typeof m.x !== 'number' || N.rxSet.has(m.x)) return;
+    N.rxSet.add(m.x);
+    if (N.rxSet.size > 512) N.rxSet = new Set([m.x]);
+  }
+  if (m.r === 1) N.suspect = now;                    // другий гравець каже, що прямим каналом нас не чує
+  if (m.t === 'p') {                                 // вимірювання затримки: відповідаємо одразу
+    if (!isNew) return;
+    netSend({ t: 'q', ts: m.ts });
+    if (mode === 'host' && typeof m.a === 'number') hostAim(m);   // у «пульсі» їде й останній напрямок: якщо окремий пакет загубився, він дійде тут
+    return;
+  }
+  if (m.t === 'q') {
+    if (typeof m.ts !== 'number') return;
+    const rtt = now - m.ts;
+    if (rtt >= 0 && rtt < 5000) {
+      N.rtts.push(rtt);
+      if (N.rtts.length > 9) N.rtts.shift();
+      N.rtt = [...N.rtts].sort((a, b) => a - b)[N.rtts.length >> 1];   // медіана останніх вимірів: окремий стрибок не смикає гру
+    }
+    return;
+  }
   if (mode === 'host') onHostData(m); else if (mode === 'guest') onGuestData(m);
 }
 
 function onHostData(m) {
-  if (m.t === 'a') {                 // напрямок другого дракона
-    if (typeof m.i === 'number') { if (m.i <= lastAimSeq) return; lastAimSeq = m.i; }
-    if (G && G.phase !== 'over' && typeof m.a === 'number' && isFinite(m.a)) G.inp[1] = m.a;
-  } else if (m.t === 'pz') {         // той бік згорнув або розгорнув гру
-    setPause('g', !!m.v);
-  } else if (m.t === 'again') {      // «Почати гру» або «Зіграти ще раз» з того боку
-    if (!G || G.phase === 'over') startMatch();
-  } else if (m.t === 'sync') {       // другий гравець щось пропустив: надсилаємо повну картину
-    if (G) { G.init = true; G.fdirty = true; }
-  }
+  if (m.t === 'a') hostAim(m);       // напрямок другого дракона
+  else if (m.t === 'pz') setPause('g', !!m.v);          // той бік згорнув або розгорнув гру
+  else if (m.t === 'again') { if (!G || G.phase === 'over') startMatch(); }   // «Почати гру» або «Зіграти ще раз» з того боку
+  else if (m.t === 'sync') { if (G && performance.now() - G.initAt > 250) G.needInit = true; }   // другий гравець просить повну картину
 }
 
+let ivMissAt = 0;
+function askSync(now) {            // просимо повну картину, але не частіше, ніж раз на 0,6 с
+  if (now - syncAsked < 600) return;
+  syncAsked = now;
+  netSend({ t: 'sync' });
+}
 function onGuestData(m) {
+  if (m.t === 'i') { if (m.g) { applyInit(m.g); ivMissAt = 0; } return; }
   if (m.t !== 's' || !m.g) return;
   const k = m.g.k;
-  if (typeof k === 'number') {
-    if (k <= lastK) return;                          // старе або повторне
-    const gap = lastK > 0 && k !== lastK + 1 && !m.g.i;
-    lastK = k;
-    if (gap && performance.now() - syncAsked > 1000) { syncAsked = performance.now(); netSend({ t: 'sync' }); }
+  if (typeof k !== 'number' || k <= lastK) return;   // старе або повторне (канал не гарантує порядку)
+  lastK = k;
+  const now = performance.now();
+  let ok = false;
+  try { ok = applyState(m.g); } catch (e) {}
+  if (!ok) {                                         // стан є, а повної картини для нього ще немає
+    if (!ivMissAt) ivMissAt = now;
+    if (now - ivMissAt > 400) askSync(now);
+  } else {
+    ivMissAt = 0;
+    if (V.needSync) askSync(now);
   }
-  try { applyState(m.g); } catch (e) {}
 }
 
 /* ----- пряме з'єднання між браузерами (WebRTC), сигнали йдуть через ті самі сервери ----- */
 function closeRtc(N) {
   clearTimeout(N.rtcTimer);
-  const pc = N.pc, dc = N.dc;
-  N.pc = null; N.dc = null; N.iceQ = []; N.via = 'relay';
-  try { if (dc) dc.close(); } catch (e) {}
+  const pc = N.pc, a = N.dcF, b = N.dcC;
+  N.pc = null; N.dcF = null; N.dcC = null; N.iceQ = []; N.via = 'relay';
+  try { if (a) a.close(); } catch (e) {}
+  try { if (b) b.close(); } catch (e) {}
   try { if (pc) pc.close(); } catch (e) {}
 }
 function newPc(N) {
@@ -1464,27 +1888,34 @@ function newPc(N) {
     if (N.pc === pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) { closeRtc(N); showVia(); }
   };
   // якщо за 15 секунд напряму не вийшло, спокійно лишаємось на серверах
-  N.rtcTimer = setTimeout(() => { if (N.pc === pc && !(N.dc && N.dc.readyState === 'open')) { closeRtc(N); showVia(); } }, 15000);
+  N.rtcTimer = setTimeout(() => { if (N.pc === pc && !dcLive(N)) { closeRtc(N); showVia(); } }, 15000);
   return pc;
 }
 function wireDc(N, pc, dc) {
+  const key = dc.label === 'fast' ? 'dcF' : 'dcC';
   dc.onopen = () => {
     if (net !== N || N.pc !== pc) return;
+    N[key] = dc;
+    if (!dcLive(N)) return;                          // чекаємо, поки відкриються обидва канали
     flushRelay(N);
-    N.dc = dc; N.via = 'p2p';
+    N.dcBorn = performance.now();
+    N.dcSeen = 0; N.rtcTries = 0;                    // «живим» канал стане, коли ним прийде перше повідомлення
     showVia();
   };
-  dc.onclose = () => { if (N.dc === dc) { N.dc = null; N.via = 'relay'; showVia(); } };
+  dc.onclose = () => { if (N.pc === pc) { closeRtc(N); showVia(); } };
   dc.onmessage = e => {
     if (net !== N || N.pc !== pc) return;
+    N.dcSeen = performance.now();
     let x; try { x = JSON.parse(e.data); } catch (err) { return; }
-    deliver(x);
+    deliver(x, false);
   };
 }
 function startRtc(N) {                   // починає той, хто зайшов другим
   const pc = newPc(N);
   if (!pc) return;
-  wireDc(N, pc, pc.createDataChannel('game', { ordered: true }));
+  // швидкий канал: без гарантії порядку й без повторів — загублений пакет не затримує наступні
+  wireDc(N, pc, pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 }));
+  wireDc(N, pc, pc.createDataChannel('ctl', { ordered: true }));
   pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
     if (N.pc === pc && linked) pub({ t: 'rtc', to: N.other, sdp: { type: 'offer', sdp: pc.localDescription.sdp } });
   }).catch(() => {});
@@ -1514,16 +1945,64 @@ function onRtc(N, m) {
 
 // у нижньому рядку видно, яким шляхом зараз іде гра
 function showVia() {
-  $('via').textContent = !linked ? '' : (net && net.via === 'p2p' ? 'Зв’язок: напряму.' : 'Зв’язок: через сервер-посередник.');
+  const N = net;
+  if (N) N.via = dcFresh(N) ? 'p2p' : 'relay';
+  if (N) N.viaAt = performance.now();
+  const lag = N && N.rtt != null ? ' Затримка ' + (V.s && !V.demo ? V.lg : Math.round(lagMs())) + ' мс, однакова для обох.' : '';
+  $('via').textContent = !linked || !N ? '' : N.weak ? 'Зв’язок: відновлюю…' : (N.via === 'p2p' ? 'Зв’язок: напряму.' : 'Зв’язок: через сервер-посередник.') + lag;
 }
 
-// пульс: якщо довго тиша, вважаємо, що другий гравець зник (на паузі чекаємо довше)
+// зв'язок з другим гравцем зник або повернувся
+function setWeak(N, v) {
+  if (N.weak === v) return;
+  N.weak = v;
+  if (mode === 'host') setPause('n', v);             // гра стає на паузу й сама продовжиться з короткого відліку
+  pauseBanner();
+  if (!G && !V.s) {                                  // ще в кімнаті, до старту
+    if (v) { $('b-go').disabled = true; roomStatus('Зник зв’язок з другим гравцем. Відновлюю…'); }
+    else roomView('ready');
+  }
+  showVia();
+}
+
+// Стеження за зв'язком, кілька разів на секунду.
+// Зміна мережі (Wi-Fi ↔ мобільний інтернет) рве і пряме з'єднання, і з'єднання із серверами.
+// Тому: коротка тиша — гра на паузі й чекає; сервери перепідключаються самі; пряме з'єднання
+// будується заново. З кімнати викидає лише після справді довгої тиші.
+const LOST_MS = window.__lostMs || 60000;
+function pingMsg(now) {
+  const m = { t: 'p', ts: Math.round(now * 10) / 10 };
+  if (mode === 'guest' && myAim != null) { m.a = r3(myAim); m.i = aimSeq; }
+  if (net && dcLive(net) && !dcHear(net)) m.r = 1;   // «прямим каналом я тебе не чую»: тоді обидва дублюють через сервери
+  return m;
+}
 setInterval(() => {
+  const N = net;
+  if (!N) return;
+  const now = performance.now();
+  // сервери: раз на кілька секунд шлемо собі «луну»; хто її не повертає, того перепідключаємо
+  if (N.ready && now - N.kAt > 3000) {
+    N.kAt = now;
+    pubOn(N, { t: 'k', ts: now });
+    N.clients.forEach((c, i) => { if (c && c._ok && c._echo && now - c._rx > 9000) rebuildBroker(N, i); });
+  }
   if (!linked) return;
-  netSend({ t: 'p' });
-  const limit = (V.z || paused()) ? 90000 : 10000;
-  if (performance.now() - lastSeen > limit) peerGone();
-}, 2000);
+  if (now - N.pingAt > 380) { N.pingAt = now; netSend(pingMsg(now)); }
+  if (mode === 'host' && G && !G.demo && (paused() || G.phase === 'over') && now - lastEmit > 300) emit([]);   // гра стоїть: стан усе одно час від часу повторюємо
+  const quiet = now - lastSeen;
+  setWeak(N, !!N.byeAt || quiet > 2000);
+  if (N.byeAt && now - N.byeAt > 20000) { peerGone(); return; }   // закрив вкладку й не повернувся
+  if (quiet > ((V.z === 1 || (G && (G.pz.h || G.pz.g))) ? 90000 : LOST_MS)) { peerGone(); return; }
+  // пряме з'єднання: якщо замовкло надовго — закриваємо; той, хто зайшов другим, пробує збудувати нове
+  if (dcLive(N) && now - (N.dcSeen || N.dcBorn) > 4000) closeRtc(N);
+  if (N.role === 'guest' && !N.pc && !N.weak && now >= N.rtcNext) {
+    N.rtcNext = now + [4000, 8000, 15000, 30000][Math.min(N.rtcTries, 3)];
+    N.rtcTries++;
+    startRtc(N);
+  }
+  const via = dcFresh(N) ? 'p2p' : 'relay';
+  if (via !== N.via || now - N.viaAt > 1500) showVia();
+}, 200);
 
 /* =====================================================================
    КЕРУВАННЯ (за зразком slither.io)
@@ -1537,9 +2016,15 @@ const playing = () => !!V.s && V.phase !== 'over' && $('overlay').hidden;
 let aimSent = 0, aimTimer = null;
 function flushAim() {
   clearTimeout(aimTimer); aimTimer = null; aimSent = performance.now();
-  if (conn && conn.open && myAim != null) { try { conn.send({ t: 'a', a: r3(myAim), i: ++aimSeq }); } catch (e) {} }
+  if (myAim == null) return;
+  if (mode === 'guest') {
+    if (conn && conn.open) { try { conn.send({ t: 'a', a: r3(myAim), i: ++aimSeq }); } catch (e) {} }
+  } else if (mode === 'host') {                      // той, хто рахує гру, чекає стільки ж, скільки йде сигнал другого гравця
+    aimAt = Math.max(aimAt, performance.now() + lagMs());
+    aimQ.push({ at: aimAt, a: r3(myAim) });
+  }
 }
-function sendAim() {             // гість шле напрямок не частіше, ніж раз на 30 мс
+function sendAim() {             // кермо обох гравців проходить через однакове «сито»: не частіше, ніж раз на 30 мс
   const wait = 30 - (performance.now() - aimSent);
   if (wait <= 0) flushAim();
   else if (!aimTimer) aimTimer = setTimeout(flushAim, wait);
@@ -1547,9 +2032,9 @@ function sendAim() {             // гість шле напрямок не ча
 
 function command(pl, a) {
   if (!playing()) return;
-  if (mode === 'guest') { myAim = a; sendAim(); return; }
+  if (V.phase === 'play') coachDone();
+  if (mode === 'guest' || mode === 'host') { myAim = a; sendAim(); return; }
   if (!G) return;
-  if (mode === 'host') pl = 0;
   G.inp[pl] = a;
 }
 
@@ -1684,12 +2169,12 @@ let quitAsk = null;
 $('b-quit').addEventListener('click', () => {
   const b = $('b-quit'), live = V.s && (V.phase === 'play' || V.phase === 'count') && $('overlay').hidden;
   if (live && !quitAsk) {
-    b.classList.add('ask'); b.querySelector('.lbl').textContent = 'Точно вийти?';
-    quitAsk = setTimeout(() => { quitAsk = null; b.classList.remove('ask'); b.querySelector('.lbl').textContent = 'У меню'; }, 2500);
+    b.classList.add('ask');
+    quitAsk = setTimeout(() => { quitAsk = null; b.classList.remove('ask'); }, 2500);
     return;
   }
   clearTimeout(quitAsk); quitAsk = null;
-  b.classList.remove('ask'); b.querySelector('.lbl').textContent = 'У меню';
+  b.classList.remove('ask');
   toMenu();
 });
 document.querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', toMenu));
@@ -1719,11 +2204,31 @@ $('b-share').addEventListener('click', () => {
 });
 $('link').addEventListener('focus', e => e.target.select());
 
-$('b-snd').addEventListener('click', () => {
-  muted = !muted;
+function setMuted(v) {
+  muted = v;
   $('b-snd').classList.toggle('muted', muted);
-  $('b-snd').querySelector('.lbl').textContent = muted ? 'Звук вимкнено' : 'Звук увімкнено';
-  if (!muted) beep(660, .08);
+  $('b-snd').title = muted ? 'Звук вимкнено' : 'Звук увімкнено';
+  try { localStorage.setItem('dva-drakony-muted', muted ? '1' : ''); } catch (e) {}
+}
+try { setMuted(!!localStorage.getItem('dva-drakony-muted')); } catch (e) { setMuted(false); }
+$('b-snd').addEventListener('click', () => { setMuted(!muted); if (!muted) beep(660, .08); });
+
+// на весь екран (де браузер це вміє)
+const fsEl = document.documentElement;
+if (fsEl.requestFullscreen && document.fullscreenEnabled !== false) {
+  $('b-full').hidden = false;
+  $('b-full').addEventListener('click', () => {
+    try { if (document.fullscreenElement) document.exitFullscreen(); else fsEl.requestFullscreen().catch(() => {}); } catch (e) {}
+  });
+  document.addEventListener('fullscreenchange', () => { $('b-full').classList.toggle('active', !!document.fullscreenElement); });
+}
+addEventListener('keydown', e => {
+  if (e.code === 'Escape' && !$('b-quit').hidden && $('overlay').hidden) $('b-quit').click();
+  // Enter натискає головну кнопку відкритого вікна, якщо фокус не стоїть на іншій кнопці чи полі
+  if (e.code === 'Enter' && !$('overlay').hidden && !e.repeat && !(document.activeElement && /^(BUTTON|A|INPUT)$/.test(document.activeElement.tagName))) {
+    const b = [...$('overlay').querySelectorAll('.btn.primary')].find(x => x.offsetParent !== null && !x.disabled);
+    if (b) { e.preventDefault(); b.click(); }
+  }
 });
 
 /* =====================================================================
@@ -1743,7 +2248,7 @@ if (validRoom(qRoom)) {
 }
 
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get net() { return net && { role: net.role, via: net.via, linked, brokers: net.clients.filter(c => c._ok).length }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length }; } };
 })();
 </script>
 </body>

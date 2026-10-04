@@ -4,7 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#e4e2f0">
-<title>Два дракони</title>
+<title>Два дракони: гра на двох</title>
+<meta name="description" content="Гра на двох: збирай шматочки, рости й обжени іншого дракона. Відкрий посилання й натисни «Почати гру». Нічого встановлювати не треба.">
+
+<!-- Картка посилання для Telegram та інших месенджерів.
+     Якщо адреса сайту інша, зміни її в рядку og:image. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Два дракони">
+<meta property="og:locale" content="uk_UA">
+<meta property="og:title" content="Заходь, зіграємо в «Два дракони»">
+<meta property="og:description" content="Гра на двох: збирай шматочки, рости й обжени іншого дракона. Відкрий посилання й натисни «Почати гру». Нічого встановлювати не треба.">
+<meta property="og:image" content="https://sstepanchuk.github.io/drakony/preview.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Рожевий і синій дракони мчать до жовтої зірки">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Заходь, зіграємо в «Два дракони»">
+<meta name="twitter:description" content="Гра на двох: збирай шматочки, рости й обжени іншого дракона. Нічого встановлювати не треба.">
+<meta name="twitter:image" content="https://sstepanchuk.github.io/drakony/preview.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Два дракони">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐉</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +54,7 @@ body{
   overflow:hidden;
   overscroll-behavior:none;
   touch-action:none;
-  -webkit-user-select:none;user-select:none;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
   -webkit-tap-highlight-color:transparent;
 }
 #app{
@@ -62,7 +83,7 @@ body{
 .timer.low{background:var(--pink);color:#fff}
 
 /* поле */
-.stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+.stage{flex:1;min-height:0;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px}
 .board{
   position:relative;line-height:0;
   border:3px solid var(--ink);border-radius:14px;overflow:hidden;
@@ -107,6 +128,7 @@ h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);l
 .pc.bump{background:var(--paper);border-style:dashed}
 .fine{font-size:13px;color:var(--mute)}
 .status{font-size:15px;font-weight:500;min-height:1.45em}
+.status:empty{display:none}
 .final{font-family:var(--display);font-weight:500;font-size:18px}
 .final .p{color:var(--pink);font-weight:800}
 .final .b{color:var(--blue);font-weight:800}
@@ -117,6 +139,7 @@ h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);l
 }
 .row{display:flex;gap:10px}
 .row .btn{flex:1}
+.stack{display:flex;flex-direction:column;gap:12px}
 .btn{
   appearance:none;-webkit-appearance:none;cursor:pointer;
   font:700 16px/1.2 var(--text);color:var(--ink);
@@ -124,11 +147,31 @@ h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);l
   box-shadow:4px 4px 0 var(--ink);
   transition:transform .06s,box-shadow .06s;
 }
+a.btn{display:block;text-align:center;text-decoration:none}
 .btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
+.btn:disabled{opacity:.45;box-shadow:none;cursor:default;transform:none}
 .btn.primary{background:var(--yellow)}
 .btn.ghost{border-color:transparent;box-shadow:none;background:none;font-weight:500;text-decoration:underline;padding:6px}
 .btn.ghost:active{transform:none;box-shadow:none}
-button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+
+/* джойстик для телефона: з'являється там, де торкнувся */
+.padzone{flex:none;width:100%;height:118px}
+.stick{
+  position:fixed;left:0;top:0;z-index:4;width:96px;height:96px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;pointer-events:none;
+  background:var(--paper);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);
+}
+.stick.on{background:rgba(246,245,251,.55);box-shadow:none}
+.knob{width:44px;height:44px;border-radius:50%;background:var(--yellow);border:3px solid var(--ink)}
+
+/* пауза */
+.pause{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:24px;text-align:center;line-height:1.4;background:rgba(246,245,251,.84);
+}
+.pause b{font-family:var(--display);font-weight:800;font-size:clamp(28px,8vw,44px);line-height:1.1}
+.pause span{max-width:22em}
 
 /* низ */
 .foot{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--mute);min-height:30px}
@@ -148,13 +191,13 @@ button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-o
 <div id="app">
   <header class="hud">
     <div class="score" style="--c:var(--pink)">
-      <b id="s0">4</b>
+      <b id="s0">5</b>
       <span class="who"><span class="nm">Жаринка</span><span class="tag" id="tag0"></span></span>
     </div>
     <div class="timer" id="timer">2:00</div>
     <div class="score right" style="--c:var(--blue)">
       <span class="who"><span class="nm">Хвилька</span><span class="tag" id="tag1"></span></span>
-      <b id="s1">4</b>
+      <b id="s1">5</b>
     </div>
   </header>
 
@@ -162,7 +205,12 @@ button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-o
     <div class="board" id="board">
       <canvas id="cv" aria-label="Ігрове поле"></canvas>
       <div class="count" id="count" hidden></div>
+      <div class="pause" id="pause" hidden>
+        <b>Пауза</b>
+        <span>Хтось згорнув гру. Продовжимо, щойно обидва гравці повернуться на сторінку.</span>
+      </div>
     </div>
+    <div class="padzone" id="padzone" hidden></div>
 
     <div class="overlay" id="overlay">
       <section class="panel" id="p-menu">
@@ -171,29 +219,41 @@ button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-o
         <ul class="rules">
           <li><i class="pc"></i><span>Шматочок додає одну ланку.</span></li>
           <li><i class="pc star"></i><span>Зірка додає одразу три.</span></li>
-          <li><i class="pc bump"></i><span>Врізався в хвіст — губиш половину довжини, і її може підібрати суперник.</span></li>
+          <li><i class="pc bump"></i><span>Врізався в іншого дракона — губиш половину довжини, і її може підібрати суперник.</span></li>
         </ul>
         <button class="btn primary" id="b-host">Створити кімнату для двох</button>
         <button class="btn" id="b-local">Грати вдвох на одній клавіатурі</button>
-        <p class="fine">Краї поля наскрізні: вилетів праворуч, з’явився ліворуч.</p>
+        <p class="fine">Дракони літають вільно в будь-якому напрямку. Краї поля наскрізні: вилетів праворуч, з’явився ліворуч.</p>
       </section>
 
       <section class="panel" id="p-lobby" hidden>
-        <h2>Кімната для двох</h2>
-        <p class="lead">Надішли це посилання. Гра почнеться, щойно його відкриють.</p>
+        <h2 id="lobby-title">Кімната для двох</h2>
+        <p class="lead" id="lobby-lead"></p>
         <input class="link" id="link" readonly hidden aria-label="Посилання на кімнату">
-        <div class="row" id="link-btns" hidden>
-          <button class="btn primary" id="b-copy">Скопіювати</button>
-          <button class="btn" id="b-share" hidden>Поділитися</button>
+        <div class="stack" id="link-btns" hidden>
+          <a class="btn primary" id="b-tg" target="_blank" rel="noopener">Надіслати в Telegram</a>
+          <div class="row">
+            <button class="btn" id="b-copy">Скопіювати</button>
+            <button class="btn" id="b-share" hidden>Інший месенджер</button>
+          </div>
         </div>
         <p class="status" id="lobby-status" role="status"></p>
+        <p class="fine" id="keep-note" hidden>Не закривай цю сторінку, поки чекаєш: кімната живе в ній.</p>
         <p class="fine" id="file-note" hidden>Зараз гра відкрита як файл із комп’ютера. Посилання запрацює для інших після публікації на GitHub Pages.</p>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
 
       <section class="panel" id="p-join" hidden>
-        <h2>Заходимо в кімнату</h2>
+        <h2>Тебе запросили зіграти</h2>
+        <p class="lead">Твій дракон синій, його звати Хвилька. Через дві хвилини перемагає довший дракон.</p>
+        <ul class="rules">
+          <li><i class="pc"></i><span>Шматочок додає одну ланку.</span></li>
+          <li><i class="pc star"></i><span>Зірка додає одразу три.</span></li>
+          <li><i class="pc bump"></i><span>Врізався в іншого дракона — губиш половину довжини, і її може підібрати суперник.</span></li>
+        </ul>
+        <p class="fine" id="join-controls"></p>
         <p class="status" id="join-status" role="status"></p>
+        <button class="btn primary" id="b-go" disabled>Почати гру</button>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
 
@@ -206,6 +266,8 @@ button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-o
       </section>
     </div>
   </main>
+
+  <div class="stick" id="stick" hidden aria-hidden="true"><div class="knob" id="knob"></div></div>
 
   <footer class="foot">
     <span id="hint"></span>
@@ -223,24 +285,33 @@ button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-o
 /* =====================================================================
    Два дракони — гра на двох без власного сервера.
    Браузери з'єднуються напряму (WebRTC) через бібліотеку PeerJS.
-   Той, хто створив кімнату, рахує гру; другий надсилає лише повороти.
+   Той, хто створив кімнату, рахує гру; другий надсилає лише напрямок.
+   Дракони рухаються вільно, без клітинок.
    ===================================================================== */
 
 const $ = id => document.getElementById(id);
-const rnd = n => Math.floor(Math.random() * n);
 const TAU = Math.PI * 2;
+const rand = (a, b) => a + Math.random() * (b - a);
 
 /* ---------- налаштування гри (можна міняти) ---------- */
-const N = 20;                    // поле N×N клітинок
-const TICK = 135;                // мс на один крок дракона
+const W = 80;                    // сторона поля в умовних одиницях
+const TICK = 25;                 // мс на один крок розрахунку (40 разів на секунду)
+const SPEED = 20;                // швидкість дракона, одиниць за секунду
+const TURN = 4.6;                // наскільки різко повертає, радіан за секунду
+const K = 7;                     // кроків сліду між сусідніми ланками
+const R_SEG = 1.7, R_HEAD = 2.4; // розміри ланки й голови
+const R_FOOD = 1.25, R_STAR = 2.1;
+const START_LEN = 5;             // довжина на старті
 const ROUND_SECONDS = 120;       // тривалість раунду
-const FOOD_MIN = 5;              // скільки шматочків завжди лежить на полі
+const FOOD_MIN = 6;              // скільки шматочків завжди лежить на полі
+const FOOD_MAX = 60;
 const STAR_CHANCE = 0.12;        // шанс, що шматочок буде зіркою (+3)
-const GHOST = 16;                // кроків невразливості після зіткнення
+const GHOST_MS = 2200;           // невразливість після зіткнення
 
+const STEP = SPEED * TICK / 1000, TURN_STEP = TURN * TICK / 1000;
 const ROUND_TICKS = Math.round(ROUND_SECONDS * 1000 / TICK);
-const COUNT_TICKS = Math.round(3000 / TICK);
-const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // вгору, праворуч, вниз, ліворуч
+const COUNT_TICKS = Math.round(3000 / TICK), RESUME_TICKS = Math.round(2000 / TICK);
+const GHOST_TICKS = Math.round(GHOST_MS / TICK);
 const NAMES = ['Жаринка', 'Хвилька'];
 const INK = '#23204a';
 const COL = [
@@ -254,146 +325,160 @@ const PEER_URLS = [
   'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'
 ];
 const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const TOUCH = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+const TITLE = document.title;
+const SHARE_TEXT = 'Заходь, зіграємо в драконів. Відкрий посилання й натисни «Почати гру».';
 
 /* ---------- стан ---------- */
 let mode = 'menu';               // menu | local | host | guest
 let G = null;                    // справжній стан гри (лише в того, хто рахує)
-const V = { cur: null, prev: null, t: 0 };   // те, що малюємо
+const V = { s: null, food: [], phase: null, n: 0, off: null, z: false };   // те, що малюємо
 let loop = null;
 let lastPhase = null, lastCountNum = null;
+let myAim = null;                // куди я кермую (для гостя)
 
 let peer = null, conn = null, room = null;
 let pending = null, pendTimer = null, retryTimer = null, noRetry = false;
 let lastSeen = 0;
 
+/* ---------- геометрія поля без країв ---------- */
+const wrap = v => ((v % W) + W) % W;
+function tdelta(a, b) { let d = a - b; if (d > W / 2) d -= W; else if (d < -W / 2) d += W; return d; }
+function tdist2(x1, y1, x2, y2) { const dx = tdelta(x1, x2), dy = tdelta(y1, y2); return dx * dx + dy * dy; }
+function angDiff(a, b) { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; }
+const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+
 /* =====================================================================
    ЛОГІКА ГРИ
    ===================================================================== */
-function mkSnake(body, dir) { return { body, dir, q: [], grow: 0, ghost: 0 }; }
+function mkSnake(x, y, a) {
+  const trail = [];
+  for (let j = 0; j <= START_LEN * K; j++) trail.push([wrap(x - Math.cos(a) * STEP * j), wrap(y - Math.sin(a) * STEP * j)]);
+  return { x, y, a, ta: a, len: START_LEN, ghost: 0, trail, reset: false };
+}
+const segAt = (s, i) => s.trail[Math.min(i * K, s.trail.length - 1)];
+const paused = () => !!(G && (G.pz.h || G.pz.g));
 
 function newGame() {
   G = {
-    phase: 'count', count: COUNT_TICKS, ticksLeft: ROUND_TICKS, food: [],
-    snakes: [
-      mkSnake([[5, 6], [4, 6], [3, 6], [2, 6]], 1),
-      mkSnake([[14, 13], [15, 13], [16, 13], [17, 13]], 3)
-    ]
+    phase: 'count', count: COUNT_TICKS, ticksLeft: ROUND_TICKS, n: 0,
+    food: [], fdirty: true, init: true,
+    inp: [null, null],
+    pz: { h: document.visibilityState === 'hidden', g: false },
+    snakes: [mkSnake(W * .28, W * .38, 0), mkSnake(W * .72, W * .62, Math.PI)]
   };
   refill();
 }
 
-function occupied(x, y, withFood) {
-  for (const s of G.snakes) for (const b of s.body) if (b[0] === x && b[1] === y) return true;
-  if (withFood) for (const f of G.food) if (f[0] === x && f[1] === y) return true;
-  return false;
-}
-
 function refill() {
   let guard = 0;
-  while (G.food.length < FOOD_MIN && guard++ < 50) {
-    for (let i = 0; i < 300; i++) {
-      const x = rnd(N), y = rnd(N);
-      if (!occupied(x, y, true)) { G.food.push([x, y, Math.random() < STAR_CHANCE ? 1 : 0]); break; }
-    }
+  while (G.food.length < FOOD_MIN && guard++ < 200) {
+    const x = rand(3, W - 3), y = rand(3, W - 3);
+    if (G.snakes.some(s => tdist2(x, y, s.x, s.y) < 64)) continue;
+    if (G.food.some(f => tdist2(x, y, f[0], f[1]) < 25)) continue;
+    G.food.push([x, y, Math.random() < STAR_CHANCE ? 1 : 0]);
+    G.fdirty = true;
   }
 }
 
-function pushDir(s, d) {
-  const last = s.q.length ? s.q[s.q.length - 1] : s.dir;
-  if (d === last || (d + 2) % 4 === last) return;
-  if (s.q.length < 2) s.q.push(d);
-}
-
-function findSpawn() {
-  for (let t = 0; t < 400; t++) {
-    const x = rnd(N), y = rnd(N), d = rnd(4);
+function findSpawn(other) {
+  for (let t = 0; t < 300; t++) {
+    const x = rand(6, W - 6), y = rand(6, W - 6);
+    if (tdist2(x, y, other.x, other.y) < 22 * 22) continue;
     let ok = true;
-    for (let k = 0; k <= 5 && ok; k++) {
-      const cx = (x + DIRS[d][0] * k + N * 8) % N, cy = (y + DIRS[d][1] * k + N * 8) % N;
-      if (occupied(cx, cy, false)) ok = false;
-    }
-    if (ok) return { cell: [x, y], dir: d };
+    for (let j = 0; j < other.len && ok; j++) { const p = segAt(other, j); if (tdist2(x, y, p[0], p[1]) < 81) ok = false; }
+    if (ok) return [x, y];
   }
-  return { cell: [rnd(N), rnd(N)], dir: rnd(4) };
+  return [wrap(other.x + W / 2), wrap(other.y + W / 2)];
 }
 
 function crash(i, ev) {
-  const s = G.snakes[i];
-  const len = s.body.length + s.grow;
-  const keep = Math.max(3, Math.ceil(len / 2));
-  const drop = len - keep;
-  const h = s.body[0];
-  ev.push(['c', i, h[0], h[1]]);
-  const cells = s.body.slice(1);
-  s.body = [];
-  if (drop > 0 && cells.length) {
-    const stepF = cells.length / drop;
-    for (let k = 0; k < drop; k++) {
-      const c = cells[Math.min(cells.length - 1, Math.floor(k * stepF))];
-      if (!G.food.some(f => f[0] === c[0] && f[1] === c[1])) G.food.push([c[0], c[1], 0]);
-    }
+  const s = G.snakes[i], o = G.snakes[1 - i];
+  ev.push(['c', i, r2(s.x), r2(s.y)]);
+  const keep = Math.max(4, Math.ceil(s.len / 2)), drop = s.len - keep;
+  for (let q = 0; q < drop && G.food.length < FOOD_MAX; q++) {
+    const idx = 1 + Math.floor(q * (s.len - 1) / drop), p = segAt(s, idx);
+    const j = idx * K > s.trail.length - 1 ? 6 : 1;   // якщо хвіст ще не розгорнувся, розкидаємо ширше
+    G.food.push([wrap(p[0] + rand(-j, j)), wrap(p[1] + rand(-j, j)), 0]);
   }
-  const sp = findSpawn();
-  s.body = [sp.cell]; s.dir = sp.dir; s.grow = keep - 1; s.ghost = GHOST; s.q = [];
+  G.fdirty = true;
+  const sp = findSpawn(o);
+  s.x = sp[0]; s.y = sp[1];
+  s.a = G.inp[i] != null ? G.inp[i] : rand(0, TAU);
+  s.ta = s.a; s.len = keep; s.trail = [[s.x, s.y]]; s.ghost = GHOST_TICKS; s.reset = true;
 }
 
 function step(ev) {
-  // рух
-  for (const s of G.snakes) {
-    if (s.q.length) { const d = s.q.shift(); if ((d + 2) % 4 !== s.dir) s.dir = d; }
-    const h = s.body[0], v = DIRS[s.dir];
-    s.body.unshift([(h[0] + v[0] + N) % N, (h[1] + v[1] + N) % N]);
-    if (s.grow > 0) s.grow--; else s.body.pop();
+  // рух: плавний поворот до бажаного напрямку
+  G.snakes.forEach((s, i) => {
+    if (G.inp[i] != null) s.ta = G.inp[i];
+    const d = angDiff(s.ta, s.a);
+    s.a += Math.max(-TURN_STEP, Math.min(TURN_STEP, d));
+    s.x = wrap(s.x + Math.cos(s.a) * STEP);
+    s.y = wrap(s.y + Math.sin(s.a) * STEP);
+    s.trail.unshift([s.x, s.y]);
+    const max = s.len * K + 2;
+    if (s.trail.length > max) s.trail.length = max;
     if (s.ghost > 0) s.ghost--;
-  }
+  });
   // їжа
   G.snakes.forEach((s, i) => {
-    const h = s.body[0];
     for (let k = G.food.length - 1; k >= 0; k--) {
-      const f = G.food[k];
-      if (f[0] === h[0] && f[1] === h[1]) {
-        s.grow += f[2] ? 3 : 1;
-        ev.push([f[2] ? 'E' : 'e', i, h[0], h[1]]);
+      const f = G.food[k], rr = R_HEAD + (f[2] ? R_STAR : R_FOOD) + .8;
+      if (tdist2(s.x, s.y, f[0], f[1]) < rr * rr) {
+        s.len += f[2] ? 3 : 1;
+        ev.push([f[2] ? 'E' : 'e', i, r2(f[0]), r2(f[1])]);
         G.food.splice(k, 1);
+        G.fdirty = true;
       }
     }
   });
-  // зіткнення
+  // зіткнення: голова в тіло іншого дракона
   const hit = [];
+  const lim = (R_HEAD + R_SEG - .4) ** 2, limHead = (2 * R_HEAD - .6) ** 2;
   G.snakes.forEach((s, i) => {
-    if (s.ghost > 0) return;
-    const h = s.body[0];
-    G.snakes.forEach((o, j) => {
-      if (j !== i && o.ghost > 0) return;
-      for (let k = (j === i ? 1 : 0); k < o.body.length; k++) {
-        if (o.body[k][0] === h[0] && o.body[k][1] === h[1]) { if (!hit.includes(i)) hit.push(i); return; }
-      }
-    });
+    const o = G.snakes[1 - i];
+    if (s.ghost > 0 || o.ghost > 0) return;
+    for (let j = 0; j < o.len; j++) {
+      const p = segAt(o, j);
+      if (tdist2(s.x, s.y, p[0], p[1]) < (j === 0 ? limHead : lim)) { hit.push(i); return; }
+      if (j * K >= o.trail.length - 1) break;
+    }
   });
   for (const i of hit) crash(i, ev);
   refill();
   if (--G.ticksLeft <= 0) { G.phase = 'over'; ev.push(['o']); }
 }
 
-function pack(ev) {
-  return {
-    p: G.phase, c: G.count, tl: G.ticksLeft,
-    s: G.snakes.map(s => ({ b: s.body.flat(), d: s.dir, g: s.ghost, l: s.body.length + s.grow })),
-    f: G.food.flat(), e: ev
+function pack(ev, moved) {
+  const m = {
+    p: G.phase, c: G.count, tl: G.ticksLeft, n: G.n, z: paused() ? 1 : 0, mv: moved ? 1 : 0,
+    s: G.snakes.map(s => {
+      const o = { x: r2(s.x), y: r2(s.y), a: r3(s.a), l: s.len, g: s.ghost };
+      if (s.reset) { o.r = 1; s.reset = false; }
+      return o;
+    }),
+    e: ev
   };
+  if (G.init) { m.i = G.snakes.map(s => s.trail.map(p => [r2(p[0]), r2(p[1])]).flat()); G.init = false; }
+  if (G.fdirty) { m.f = G.food.map(f => [r2(f[0]), r2(f[1]), f[2]]).flat(); G.fdirty = false; }
+  return m;
 }
 
-function emit(ev) {
-  const m = pack(ev);
+function emit(ev, moved) {
+  const m = pack(ev, moved);
   applyState(m);
   if (conn && conn.open) { try { conn.send({ t: 's', g: m }); } catch (e) {} }
 }
 
 function hostTick() {
+  if (paused()) return;
   const ev = [];
+  let moved = false;
+  G.n++;
   if (G.phase === 'count') { if (--G.count <= 0) G.phase = 'play'; }
-  else if (G.phase === 'play') step(ev);
-  emit(ev);
+  else if (G.phase === 'play') { step(ev); moved = true; }
+  emit(ev, moved);
   if (G.phase === 'over') stopLoop();
 }
 
@@ -404,16 +489,32 @@ function startLoop() {
     const now = performance.now();
     acc += now - last; last = now;
     let n = 0;
-    while (acc >= TICK && n < 4 && loop && G) { acc -= TICK; n++; hostTick(); }
-    if (acc > TICK * 4) acc = 0;
-  }, 20);
+    while (acc >= TICK && n < 5 && loop && G) { acc -= TICK; n++; hostTick(); }
+    if (acc > TICK * 5) acc = 0;
+  }, 8);
 }
 function stopLoop() { if (loop) { clearInterval(loop); loop = null; } }
 
+// пауза, коли хтось згорнув гру
+function setPause(who, v) {
+  if (!G || G.pz[who] === v) return;
+  const was = paused();
+  G.pz[who] = v;
+  if (was && !paused() && G.phase === 'play') { G.phase = 'count'; G.count = RESUME_TICKS; }
+  if (G.phase !== 'over') emit([], false);
+}
+
+function resetView() {
+  V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false;
+  lastPhase = null; lastCountNum = null; myAim = null;
+  fly.length = 0;
+  $('count').hidden = true; $('pause').hidden = true;
+}
+
 function startMatch() {
   newGame();
-  V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
-  emit([]);
+  resetView();
+  emit([], false);
   startLoop();
 }
 
@@ -421,53 +522,71 @@ function startMatch() {
    ПРИЙОМ СТАНУ (однаково для обох гравців)
    ===================================================================== */
 function unflat(a, k) { const o = []; for (let i = 0; i + k <= a.length; i += k) o.push(a.slice(i, i + k)); return o; }
+const hudCache = {};
+function setText(id, t) { if (hudCache[id] !== t) { hudCache[id] = t; $(id).textContent = t; } }
 
 function applyState(m) {
-  const cur = {
-    phase: m.p, count: m.c, tl: m.tl,
-    snakes: m.s.map(s => ({ body: unflat(s.b, 2), dir: s.d, ghost: s.g, len: s.l })),
-    food: unflat(m.f, 3)
-  };
-  V.prev = V.cur; V.cur = cur; V.t = performance.now();
+  const now = performance.now();
+  if (m.i) { V.s = m.i.map(tr => ({ trail: unflat(tr, 2), a: 0, len: 0, ghost: 0 })); V.off = null; myAim = null; fly.length = 0; }
+  if (!V.s) V.s = m.s.map(() => ({ trail: [], a: 0, len: 0, ghost: 0 }));
+  m.s.forEach((o, j) => {
+    const vs = V.s[j];
+    if (o.r) vs.trail = [];
+    if (m.mv || !vs.trail.length) vs.trail.unshift([o.x, o.y]);
+    const max = o.l * K + 12;
+    if (vs.trail.length > max) vs.trail.length = max;
+    vs.a = o.a; vs.len = o.l; vs.ghost = o.g;
+  });
+  if (m.f) V.food = unflat(m.f, 3);
+  V.phase = m.p; V.n = m.n; V.z = !!m.z;
 
-  $('s0').textContent = cur.snakes[0].len;
-  $('s1').textContent = cur.snakes[1].len;
-  const sec = Math.max(0, Math.ceil(cur.tl * TICK / 1000));
-  $('timer').textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
-  $('timer').classList.toggle('low', cur.phase === 'play' && sec <= 10);
+  // плавний годинник відтворення: згладжує нерівномірний прихід кроків
+  const sample = m.n * TICK - now;
+  if (V.off == null || Math.abs(sample - V.off) > 120) V.off = sample;
+  else V.off += (sample - V.off) * .08;
+
+  setText('s0', String(m.s[0].l));
+  setText('s1', String(m.s[1].l));
+  const sec = Math.max(0, Math.ceil(m.tl * TICK / 1000));
+  setText('timer', Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
+  $('timer').classList.toggle('low', m.p === 'play' && sec <= 10);
 
   for (const e of (m.e || [])) fx(e);
 
   const countEl = $('count');
-  if (cur.phase === 'count') {
-    const n = Math.max(1, Math.ceil(cur.count * TICK / 1000));
+  $('pause').hidden = !V.z || m.p === 'over';
+  if (V.z) { countEl.hidden = true; lastCountNum = null; }
+  else if (m.p === 'count') {
+    const n = Math.max(1, Math.ceil(m.c * TICK / 1000));
     if (n !== lastCountNum) { lastCountNum = n; countEl.textContent = n; countEl.hidden = false; beep(440, .1); }
   }
-  if (cur.phase !== lastPhase) {
-    if (cur.phase === 'count') show(null);
-    if (cur.phase === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); }
-    if (cur.phase === 'over') { countEl.hidden = true; lastCountNum = null; showOver(cur); }
-    lastPhase = cur.phase;
+  if (m.p !== lastPhase) {
+    if (m.p === 'count') { show(null); keepAwake(); document.title = TITLE; }
+    if (m.p === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); }
+    if (m.p === 'over') { countEl.hidden = true; lastCountNum = null; showOver(m.s[0].l, m.s[1].l); }
+    lastPhase = m.p;
   }
 }
 
 function fx(e) {
   const [t, i, x, y] = e;
-  if (t === 'e') { burst(x, y, COL[i].main, 7); beep(i ? 620 : 520, .08); }
-  else if (t === 'E') { burst(x, y, '#ffd91a', 14); beep(i ? 620 : 520, .08); setTimeout(() => beep(i ? 930 : 780, .12), 70); }
-  else if (t === 'c') { burst(x, y, COL[i].main, 22); beep(170, .32, 'sawtooth', .06, .45); }
+  if (t === 'e' || t === 'E') {
+    fly.push({ x, y, k: t === 'E' ? 1 : 0, i, t0: performance.now() });
+    if (t === 'E') { burst(x, y, '#ffd91a', 12); beep(i ? 620 : 520, .08); setTimeout(() => beep(i ? 930 : 780, .12), 70); }
+    else beep(i ? 620 : 520, .08);
+  }
+  else if (t === 'c') { burst(x, y, COL[i].main, 24); beep(170, .32, 'sawtooth', .06, .45); }
   else if (t === 'o') { beep(520, .15); setTimeout(() => beep(390, .3), 160); }
 }
 
-function showOver(cur) {
-  const a = cur.snakes[0].len, b = cur.snakes[1].len;
+function showOver(a, b) {
   const win = a === b ? -1 : (a > b ? 0 : 1);
   $('over-title').textContent = win < 0 ? 'Нічия' : 'Перемогла ' + NAMES[win];
   const sc = $('over-score');
   sc.textContent = '';
   const mk = (cls, txt) => { const el = document.createElement('span'); if (cls) el.className = cls; el.textContent = txt; return el; };
   sc.append(mk('p', NAMES[0] + ' ' + a), mk('', '  :  '), mk('b', b + ' ' + NAMES[1]));
-  let note = '';
+  let note;
   if (mode === 'host' || mode === 'guest') {
     const me = mode === 'host' ? 0 : 1;
     note = win < 0 ? 'Дракони однакової довжини. Потрібен ще один раунд.'
@@ -484,142 +603,186 @@ function showOver(cur) {
    МАЛЮВАННЯ
    ===================================================================== */
 const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
-let S = 0, C = 0, DPR = 1, bg = null;
+let S = 0, U = 0, DPR = 1, bg = null;
+const PAD_SPACE = 118 + 20;   // місце під полем для джойстика на телефоні
 
 function resize() {
-  const avail = Math.min(stage.clientWidth, stage.clientHeight) - 24;
-  const size = Math.max(180, Math.floor(avail));
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const plain = Math.min(w, h) - 24, withPad = Math.min(w, h - PAD_SPACE) - 24;
+  const usePad = TOUCH && withPad >= 220 && withPad >= plain * .85;
+  $('padzone').hidden = !usePad;
+  const size = Math.max(180, Math.floor(usePad ? withPad : plain));
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-  if (size === S && dpr === DPR && bg) return;
-  S = size; DPR = dpr; C = S / N;
-  cv.style.width = cv.style.height = S + 'px';
-  cv.width = cv.height = Math.round(S * DPR);
-  makeBg();
+  if (size !== S || dpr !== DPR || !bg) {
+    S = size; DPR = dpr; U = S / W;
+    cv.style.width = cv.style.height = S + 'px';
+    cv.width = cv.height = Math.round(S * DPR);
+    makeBg();
+  }
+  if (!st) stickIdle();
 }
 
+// тло без сітки: бліді плями й розсип цяток, що безшовно переходять через край
 function makeBg() {
   bg = document.createElement('canvas');
   bg.width = bg.height = cv.width;
   const g = bg.getContext('2d');
-  g.scale(DPR, DPR);
+  g.scale(DPR * U, DPR * U);
   g.fillStyle = '#f6f5fb';
-  g.fillRect(0, 0, S, S);
-  // растрова сітка: крапки більшають до центру поля
-  g.fillStyle = '#cdcff0';
-  const mid = N / 2;
-  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
-    const d = Math.hypot(i - mid, j - mid) / mid;
-    const k = Math.max(0, 1 - d * 0.95);
-    const r = C * (0.05 + 0.13 * k * k);
-    g.beginPath(); g.arc(i * C, j * C, r, 0, TAU); g.fill();
+  g.fillRect(0, 0, W, W);
+  let seed = 20261004;
+  const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const dot = (x, y, r) => {
+    for (const ox of [-W, 0, W]) for (const oy of [-W, 0, W]) {
+      if (x + ox < -r || x + ox > W + r || y + oy < -r || y + oy > W + r) continue;
+      g.beginPath(); g.arc(x + ox, y + oy, r, 0, TAU); g.fill();
+    }
+  };
+  const tints = ['#ecebf8', '#ecebf8', '#ecebf8', '#fbecf4', '#e9f0fd'];
+  for (let b = 0; b < 9; b++) {
+    const cx = rnd() * W, cy = rnd() * W;
+    g.fillStyle = tints[Math.floor(rnd() * tints.length)];
+    const n = 3 + Math.floor(rnd() * 3);
+    for (let k = 0; k < n; k++) dot(cx + (rnd() - .5) * 13, cy + (rnd() - .5) * 8, 3.5 + rnd() * 4.5);
   }
+  g.fillStyle = '#d3d5f1';
+  for (let i = 0; i < 90; i++) dot(rnd() * W, rnd() * W, .14 + rnd() * .3);
 }
 
-function segPos(sn, psn, i, a) {
-  const c = sn.body[i];
-  if (!psn || !psn.body.length) return [c[0], c[1]];
-  const p = psn.body[Math.min(i, psn.body.length - 1)];
-  let dx = c[0] - p[0], dy = c[1] - p[1];
-  if (dx > N / 2) dx -= N; else if (dx < -N / 2) dx += N;
-  if (dy > N / 2) dy -= N; else if (dy < -N / 2) dy += N;
-  if (Math.abs(dx) + Math.abs(dy) > 1) return [c[0], c[1]];
-  return [c[0] - dx * (1 - a), c[1] - dy * (1 - a)];
+function trailAt(tr, f) {
+  const i0 = Math.min(tr.length - 1, Math.floor(f)), i1 = Math.min(tr.length - 1, i0 + 1);
+  const t = f - Math.floor(f), a = tr[i0], b = tr[i1];
+  return [a[0] + tdelta(b[0], a[0]) * t, a[1] + tdelta(b[1], a[1]) * t];
 }
 
-function wrapDraw(p, fn) {
-  fn(p[0], p[1]);
-  if (p[0] < 0) fn(p[0] + N, p[1]); else if (p[0] > N - 1) fn(p[0] - N, p[1]);
-  if (p[1] < 0) fn(p[0], p[1] + N); else if (p[1] > N - 1) fn(p[0], p[1] - N);
+// малює об'єкт і його «двійника» з іншого боку, якщо він перетинає край поля
+function wrapDraw(x, y, m, fn) {
+  const xs = [x], ys = [y];
+  if (x < m) xs.push(x + W); else if (x > W - m) xs.push(x - W);
+  if (y < m) ys.push(y + W); else if (y > W - m) ys.push(y - W);
+  for (const X of xs) for (const Y of ys) fn(X * U, Y * U);
 }
 
-function drawSeg(x, y, r, fill, light) {
-  const cx = (x + .5) * C, cy = (y + .5) * C;
+function drawSeg(cx, cy, r, fill, light) {
   ctx.fillStyle = fill;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.fillStyle = light;
   ctx.beginPath(); ctx.arc(cx, cy, r * .36, 0, TAU); ctx.fill();
 }
 
-function drawHead(x, y, dir, col) {
-  const r = C * .5, lw = ctx.lineWidth;
+function drawHead(cx, cy, ang, pal) {
+  const r = R_HEAD * U * .88, lw = ctx.lineWidth;
   ctx.save();
-  ctx.translate((x + .5) * C, (y + .5) * C);
-  ctx.rotate([-Math.PI / 2, 0, Math.PI / 2, Math.PI][dir]);
-  // роги
-  ctx.fillStyle = col.light;
-  for (const s of [-1, 1]) {
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  ctx.fillStyle = pal.light;
+  for (const s of [-1, 1]) {      // роги
     ctx.beginPath();
     ctx.moveTo(-.15 * r, s * .6 * r);
     ctx.lineTo(-1.2 * r, s * 1.05 * r);
     ctx.lineTo(-.7 * r, s * .2 * r);
     ctx.closePath(); ctx.fill(); ctx.stroke();
   }
-  // голова й морда одним силуетом
-  ctx.lineWidth = lw * 2;
+  ctx.lineWidth = lw * 2;         // голова й морда одним силуетом
   ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.stroke();
   ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.stroke();
-  ctx.fillStyle = col.main;
+  ctx.fillStyle = pal.main;
   ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.fill();
   ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.fill();
   ctx.lineWidth = lw * .8;
-  // очі
-  for (const s of [-1, 1]) {
+  for (const s of [-1, 1]) {      // очі й ніздрі
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(.12 * r, s * .47 * r, .29 * r, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = INK;
+    ctx.fillStyle = pal.ink;
     ctx.beginPath(); ctx.arc(.22 * r, s * .47 * r, .13 * r, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.arc(1.02 * r, s * .2 * r, .065 * r, 0, TAU); ctx.fill();
   }
   ctx.restore();
 }
 
-function drawSnake(sn, psn, idx, a, now) {
-  const n = sn.body.length;
-  if (!n) return;
+function headPose(vs, back) {
+  const tr = vs.trail, p = trailAt(tr, back);
+  let ang = vs.a;
+  if (tr.length > 2) {
+    const q = trailAt(tr, back + 1.5);
+    const dx = tdelta(p[0], q[0]), dy = tdelta(p[1], q[1]);
+    if (dx * dx + dy * dy > 1e-4) ang = Math.atan2(dy, dx);
+  }
+  return [p[0], p[1], ang];
+}
+
+function drawSnake(vs, idx, back, now) {
+  const tr = vs.trail, n = vs.len;
+  if (!tr.length) return;
   const col = COL[idx];
-  ctx.save();
-  if (sn.ghost > 0) ctx.globalAlpha = REDUCED ? .5 : .42 + .22 * Math.sin(now / 80);
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = Math.max(1.2, C * .075);
+  // після зіткнення дракон блідий і невразливий; перед кінцем захисту блимає
+  const pale = vs.ghost > 0 && !(vs.ghost < 24 && !REDUCED && Math.floor(now / 70) % 2);
+  const pal = pale ? { main: col.light, alt: '#fff', light: '#fff', ink: col.main }
+                   : { main: col.main, alt: col.alt, light: col.light, ink: INK };
+  ctx.strokeStyle = pal.ink;
+  ctx.lineWidth = Math.max(1.2, U * .3);
+  const m = R_HEAD * 2.2;
   for (let i = n - 1; i >= 1; i--) {
     const fromTail = n - 1 - i;
     const k = fromTail === 0 ? .6 : fromTail === 1 ? .76 : fromTail === 2 ? .9 : 1;
-    const r = C * .42 * k;
-    wrapDraw(segPos(sn, psn, i, a), (x, y) => drawSeg(x, y, r, i % 2 ? col.main : col.alt, col.light));
+    const p = trailAt(tr, i * K + back), r = R_SEG * U * k;
+    wrapDraw(p[0], p[1], m, (x, y) => drawSeg(x, y, r, i % 2 ? pal.main : pal.alt, pal.light));
   }
-  wrapDraw(segPos(sn, psn, 0, a), (x, y) => drawHead(x, y, sn.dir, col));
+  const h = headPose(vs, back);
+  wrapDraw(h[0], h[1], m, (x, y) => drawHead(x, y, h[2], pal));
+  return h;
+}
+
+// маленька стрілка перед головою: показує, куди ти кермуєш
+function drawAim(h, aim, idx) {
+  if (aim == null || !h) return;
+  const d = Math.abs(angDiff(aim, h[2]));
+  if (d < .14) return;
+  const dist = R_HEAD * 2.5, sz = U * 1.05;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, (d - .14) * 4);
+  ctx.fillStyle = COL[idx].main; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(1, U * .22);
+  wrapDraw(h[0] + Math.cos(aim) * dist, h[1] + Math.sin(aim) * dist, 3, (x, y) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(aim);
+    ctx.beginPath(); ctx.moveTo(sz, 0); ctx.lineTo(-sz * .7, sz * .8); ctx.lineTo(-sz * .25, 0); ctx.lineTo(-sz * .7, -sz * .8); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.restore();
+  });
   ctx.restore();
 }
 
-function drawFood(f, now, scale) {
-  const x = f[0], y = f[1], star = f[2];
-  const cx = (x + .5) * C, cy = (y + .5) * C;
+function drawFood(x, y, star, now, scale) {
   const pul = REDUCED ? 1 : 1 + .07 * Math.sin(now / 260 + x * 1.7 + y * .9);
   ctx.strokeStyle = INK;
-  ctx.lineWidth = Math.max(1.1, C * .065);
+  ctx.lineWidth = Math.max(1.1, U * .26);
   ctx.fillStyle = '#ffd91a';
   if (star) {
-    const R = C * .46 * pul * scale, r = R * .48, rot = REDUCED ? 0 : now / 900;
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const ang = rot + i * TAU / 10, rr = i % 2 ? r : R;
-      ctx.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
-    }
-    ctx.closePath(); ctx.fill(); ctx.stroke();
+    const R = R_STAR * U * pul * scale, r = R * .48, rot = REDUCED ? -Math.PI / 2 : now / 900;
+    wrapDraw(x, y, R_STAR + 1, (cx, cy) => {
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const ang = rot + i * TAU / 10, rr = i % 2 ? r : R;
+        ctx.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    });
   } else {
-    const r = C * .27 * pul * scale;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#fff6b8';
-    ctx.beginPath(); ctx.arc(cx, cy, r * .38, 0, TAU); ctx.fill();
+    const r = R_FOOD * U * pul * scale;
+    wrapDraw(x, y, R_FOOD + 1, (cx, cy) => {
+      ctx.fillStyle = '#ffd91a';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff6b8';
+      ctx.beginPath(); ctx.arc(cx, cy, r * .38, 0, TAU); ctx.fill();
+    });
   }
 }
 
+const fly = [];      // з'їдені шматочки, що летять до голови
 const parts = [];
 function burst(x, y, col, n) {
   if (REDUCED) return;
   for (let i = 0; i < n; i++) {
-    const a = Math.random() * TAU, v = 2 + Math.random() * 5;
-    parts.push({ x: x + .5, y: y + .5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: 320 + Math.random() * 260, col });
+    const a = Math.random() * TAU, v = 8 + Math.random() * 20;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: 320 + Math.random() * 260, col });
   }
 }
 function drawParts(dt) {
@@ -630,7 +793,7 @@ function drawParts(dt) {
     p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000;
     const k = 1 - p.life / p.max;
     ctx.fillStyle = p.col;
-    ctx.beginPath(); ctx.arc(p.x * C, p.y * C, C * .14 * k + .5, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x * U, p.y * U, U * .55 * k + .5, 0, TAU); ctx.fill();
   }
 }
 
@@ -642,16 +805,23 @@ function frame(now) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1;
   ctx.drawImage(bg, 0, 0, S, S);
-  const cur = V.cur, prev = V.prev;
-  if (cur) {
-    const a = cur.phase === 'play' ? Math.min(1, (now - V.t) / TICK) : 1;
-    for (const f of cur.food) drawFood(f, now, 1);
-    if (prev && a < .6) {   // щойно з'їдений шматочок зникає, коли голова до нього доїжджає
-      for (const f of prev.food) {
-        if (!cur.food.some(g => g[0] === f[0] && g[1] === f[1])) drawFood(f, now, 1 - a / .6);
-      }
+  if (V.s) {
+    // малюємо на крок-два позаду останнього отриманого стану, щоб рух був рівний
+    const delay = mode === 'guest' ? 2 : 1;
+    let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delay);
+    back = Math.max(0, Math.min(6, back));
+    for (const f of V.food) drawFood(f[0], f[1], f[2], now, 1);
+    for (let i = fly.length - 1; i >= 0; i--) {
+      const f = fly[i], t = (now - f.t0) / 150, vs = V.s[f.i];
+      if (t >= 1 || !vs || !vs.trail.length) { fly.splice(i, 1); continue; }
+      const h = trailAt(vs.trail, back), e = t * t;
+      drawFood(f.x + tdelta(h[0], f.x) * e, f.y + tdelta(h[1], f.y) * e, f.k, now, 1 - .75 * t);
     }
-    for (let i = 0; i < cur.snakes.length; i++) drawSnake(cur.snakes[i], prev && prev.snakes[i], i, a, now);
+    const heads = V.s.map((vs, i) => drawSnake(vs, i, back, now));
+    if (V.phase === 'play' && !V.z) {
+      if (mode === 'guest') drawAim(heads[1], myAim, 1);
+      else if (G) { drawAim(heads[0], G.inp[0], 0); if (mode === 'local') drawAim(heads[1], G.inp[1], 1); }
+    }
   }
   drawParts(dt);
 }
@@ -690,17 +860,55 @@ const PANELS = ['menu', 'lobby', 'join', 'over'];
 function show(name) {
   for (const p of PANELS) $('p-' + p).hidden = p !== name;
   $('overlay').hidden = !name;
+  if (name) releaseInput();
 }
+const CONTROLS = TOUCH
+  ? 'Керування: торкнись екрана будь-де й веди пальцем туди, куди має летіти дракон.'
+  : 'Керування: стрілки або W A S D, можна по діагоналі. Або затисни кнопку миші й веди дракона за курсором.';
+$('join-controls').textContent = CONTROLS;
 function setChrome() {
   $('tag0').textContent = mode === 'host' ? 'це ти' : mode === 'local' ? 'W A S D' : '';
   $('tag1').textContent = mode === 'guest' ? 'це ти' : mode === 'local' ? 'стрілки' : '';
   $('hint').textContent =
-    mode === 'local' ? 'Жаринка їздить на W A S D, Хвилька на стрілках.' :
-    (mode === 'host' || mode === 'guest') ? 'Стрілки або W A S D. На телефоні проведи пальцем.' : '';
+    mode === 'local' ? 'Жаринка літає на W A S D, Хвилька на стрілках.' :
+    (mode === 'host' || mode === 'guest') ? (TOUCH ? 'Веди пальцем будь-де на екрані.' : 'Стрілки, W A S D або затиснута миша.') : '';
   $('b-quit').hidden = mode === 'menu';
 }
 const lobbyStatus = t => { $('lobby-status').textContent = t; };
 const joinStatus = t => { $('join-status').textContent = t; };
+
+// вигляд кімнати в того, хто її створив
+function lobbyView(state) {
+  const joined = state === 'joined';
+  $('lobby-title').textContent = joined ? 'Другий дракон уже тут' : 'Кімната для двох';
+  $('lobby-lead').textContent = joined
+    ? 'Гра почнеться, щойно на тому боці натиснуть «Почати гру».'
+    : 'Надішли посилання тому, з ким граєш. Гра почнеться, коли там натиснуть «Почати гру».';
+  const ready = state !== 'opening' && !joined;
+  $('link').hidden = !ready; $('link-btns').hidden = !ready; $('keep-note').hidden = !ready;
+  $('file-note').hidden = !(ready && location.protocol === 'file:');
+  if (joined) lobbyStatus('');
+}
+
+// не даємо екрану згаснути під час гри й очікування
+let wake = null;
+async function keepAwake() {
+  try {
+    if (!('wakeLock' in navigator) || wake || document.visibilityState !== 'visible') return;
+    wake = await navigator.wakeLock.request('screen');
+    wake.addEventListener('release', () => { wake = null; });
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  const hidden = document.visibilityState !== 'visible';
+  // гра стає на паузу, поки хтось із гравців не на сторінці
+  if (mode === 'host' || mode === 'local') setPause('h', hidden);
+  else if (mode === 'guest' && conn && conn.open) { try { conn.send({ t: 'pz', v: hidden }); } catch (e) {} }
+  if (hidden) { releaseInput(); return; }
+  if (mode !== 'menu') keepAwake();
+  try { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); } catch (e) {}
+  if (mode === 'guest' && !conn && !pending) scheduleRetry(300);
+});
 
 function teardown() {
   stopLoop();
@@ -710,11 +918,13 @@ function teardown() {
   conn = null; peer = null;
   try { if (c) c.close(); } catch (e) {}
   try { if (p) p.destroy(); } catch (e) {}
-  G = null; V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
-  $('count').hidden = true;
+  G = null;
+  resetView();
   $('timer').classList.remove('low');
-  $('timer').textContent = '2:00';
-  $('s0').textContent = $('s1').textContent = '4';
+  setText('timer', '2:00');
+  setText('s0', String(START_LEN)); setText('s1', String(START_LEN));
+  $('b-go').disabled = true;
+  document.title = TITLE;
 }
 
 function toMenu() {
@@ -728,6 +938,7 @@ function startLocal() {
   teardown();
   mode = 'local';
   setChrome();
+  keepAwake();
   startMatch();
 }
 
@@ -741,7 +952,7 @@ const store = {
 const validRoom = r => typeof r === 'string' && /^[a-z0-9]{4,12}$/.test(r);
 function makeCode() {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
-  let s = ''; for (let i = 0; i < 6; i++) s += abc[rnd(abc.length)];
+  let s = ''; for (let i = 0; i < 6; i++) s += abc[Math.floor(Math.random() * abc.length)];
   return s;
 }
 
@@ -764,6 +975,7 @@ function loadPeerLib() {
   return peerLib;
 }
 const LIB_FAIL = 'Не вдалося завантажити мережеву частину гри. Перевір інтернет і онови сторінку.';
+const NO_RTC = 'Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.';
 
 function watchSignal(p) {
   p.on('disconnected', () => {
@@ -778,10 +990,10 @@ async function hostStart() {
   teardown();
   mode = 'host';
   setChrome();
-  $('link').hidden = true; $('link-btns').hidden = true;
-  $('file-note').hidden = true;
+  lobbyView('opening');
   show('lobby');
   lobbyStatus('Відкриваю кімнату…');
+  keepAwake();
   try { await loadPeerLib(); } catch (e) { if (mode === 'host') lobbyStatus(LIB_FAIL); return; }
   if (mode !== 'host') return;
   const saved = store.get();
@@ -793,7 +1005,7 @@ function openHostPeer(attempt) {
   if (mode !== 'host') return;
   let p;
   try { p = new window.Peer(PEER_PREFIX + room); }
-  catch (e) { lobbyStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.'); return; }
+  catch (e) { lobbyStatus(NO_RTC); return; }
   peer = p;
 
   p.on('open', () => {
@@ -801,10 +1013,9 @@ function openHostPeer(attempt) {
     store.set(room);
     const url = location.href.split(/[?#]/)[0] + '?room=' + room;
     $('link').value = url;
-    $('link').hidden = false; $('link-btns').hidden = false;
+    $('b-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(SHARE_TEXT);
     $('b-share').hidden = !navigator.share;
-    $('file-note').hidden = location.protocol !== 'file:';
-    if (!conn) lobbyStatus('Чекаю на другого дракона…');
+    if (!conn) { lobbyView('waiting'); lobbyStatus('Чекаю на другого дракона…'); }
   });
 
   p.on('connection', c => {
@@ -816,7 +1027,13 @@ function openHostPeer(attempt) {
     const old = conn;
     conn = c;
     if (old) { try { old.close(); } catch (e) {} }
-    c.on('open', () => { if (conn !== c) return; lastSeen = performance.now(); startMatch(); });
+    c.on('open', () => {
+      if (conn !== c) return;
+      lastSeen = performance.now();
+      lobbyView('joined');
+      document.title = 'Другий дракон уже тут';
+      beep(660, .1); setTimeout(() => beep(880, .16), 120);
+    });
     c.on('data', m => { if (conn === c) onHostData(m); });
     c.on('close', () => { if (conn === c) { conn = null; hostLostGuest(); } });
     c.on('error', () => {});
@@ -838,7 +1055,7 @@ function openHostPeer(attempt) {
         openHostPeer(0);
       }
     } else if (t === 'browser-incompatible') {
-      lobbyStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.');
+      lobbyStatus(NO_RTC);
     } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
       lobbyStatus('Немає зв’язку із сервером, який знайомить гравців. Перевір інтернет і онови сторінку.');
     }
@@ -848,18 +1065,22 @@ function openHostPeer(attempt) {
 function onHostData(m) {
   lastSeen = performance.now();
   if (!m || typeof m !== 'object') return;
-  if (m.t === 'd') {
-    if (G && G.phase !== 'over' && Number.isInteger(m.d) && m.d >= 0 && m.d < 4) pushDir(G.snakes[1], m.d);
-  } else if (m.t === 'again') {
-    if (G && G.phase === 'over') startMatch();
+  if (m.t === 'a') {                 // напрямок другого дракона
+    if (G && G.phase !== 'over' && typeof m.a === 'number' && isFinite(m.a)) G.inp[1] = m.a;
+  } else if (m.t === 'pz') {         // той бік згорнув або розгорнув гру
+    setPause('g', !!m.v);
+  } else if (m.t === 'again') {      // «Почати гру» або «Зіграти ще раз» з того боку
+    if (!G || G.phase === 'over') startMatch();
   }
 }
 
 function hostLostGuest() {
   if (mode !== 'host') return;
   stopLoop();
-  G = null; V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
-  $('count').hidden = true;
+  G = null;
+  resetView();
+  document.title = TITLE;
+  lobbyView('waiting');
   show('lobby');
   lobbyStatus('Другий дракон відлетів. Посилання те саме, чекаю на повернення…');
 }
@@ -875,7 +1096,7 @@ async function guestStart() {
   if (mode !== 'guest') return;
   let p;
   try { p = new window.Peer(); }
-  catch (e) { joinStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.'); return; }
+  catch (e) { joinStatus(NO_RTC); return; }
   peer = p;
   p.on('open', () => { if (peer === p) guestConnect(); });
   watchSignal(p);
@@ -884,10 +1105,10 @@ async function guestStart() {
     const t = err && err.type;
     if (t === 'peer-unavailable') {
       dropPending();
-      joinStatus('Кімната поки зачинена. Щойно її відкриють, гра під’єднається сама.');
+      joinStatus('Той, хто тебе запросив, ще не відкрив гру. Щойно відкриє, усе під’єднається саме.');
       scheduleRetry(3000);
     } else if (t === 'browser-incompatible') {
-      joinStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.');
+      joinStatus(NO_RTC);
     } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
       joinStatus('Немає зв’язку із сервером, який знайомить гравців. Пробую ще…');
       scheduleRetry(4000);
@@ -926,7 +1147,8 @@ function guestConnect() {
     if (pending !== c) return;
     pending = null; clearTimeout(pendTimer);
     conn = c; lastSeen = performance.now();
-    joinStatus('З’єднано. Зараз почнемо.');
+    joinStatus('Ви обоє в кімнаті. Тисни, коли будеш напоготові.');
+    $('b-go').disabled = false;
   });
   c.on('data', m => onGuestData(c, m));
   c.on('close', () => { if (conn === c) { conn = null; guestLost(); } });
@@ -947,20 +1169,21 @@ function onGuestData(c, m) {
 
 function guestLost() {
   if (mode !== 'guest') return;
-  V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
-  $('count').hidden = true;
+  resetView();
+  $('b-go').disabled = true;
   show('join');
   if (noRetry) return;
   joinStatus('Зв’язок перервався. Під’єднуюся знову…');
   scheduleRetry(1500);
 }
 
-// пульс: якщо 10 секунд тиша, вважаємо, що зв'язок зник
+// пульс: якщо довго тиша, вважаємо, що зв'язок зник (на паузі чекаємо довше)
 setInterval(() => {
   const c = conn;
   if (!c) return;
   if (c.open) { try { c.send({ t: 'p' }); } catch (e) {} }
-  if (performance.now() - lastSeen > 10000) {
+  const limit = (V.z || paused()) ? 90000 : 10000;
+  if (performance.now() - lastSeen > limit) {
     conn = null;
     try { c.close(); } catch (e) {}
     if (mode === 'host') hostLostGuest(); else if (mode === 'guest') guestLost();
@@ -969,48 +1192,140 @@ setInterval(() => {
 
 /* =====================================================================
    КЕРУВАННЯ
+   Дракон плавно повертає до напрямку, який ти задаєш:
+   клавішами (вісім напрямків), пальцем (джойстик у будь-якому місці) або мишею.
    ===================================================================== */
-function input(pl, d) {
-  if (!V.cur || V.cur.phase === 'over') return;
-  if (mode === 'guest') {
-    if (conn && conn.open) { try { conn.send({ t: 'd', d }); } catch (e) {} }
-    return;
-  }
-  if (!G) return;
-  if (mode === 'host') pl = 0;
-  pushDir(G.snakes[pl], d);
+const playing = () => V.s && V.phase !== 'over' && $('overlay').hidden;
+
+let aimSent = 0, aimTimer = null, aimQueued = null;
+function sendAim(a) {            // гість шле напрямок не частіше, ніж раз на 30 мс
+  aimQueued = a;
+  const now = performance.now(), wait = 30 - (now - aimSent);
+  const flush = () => {
+    aimTimer = null; aimSent = performance.now();
+    if (conn && conn.open && aimQueued != null) { try { conn.send({ t: 'a', a: r3(aimQueued) }); } catch (e) {} }
+  };
+  if (wait <= 0) { clearTimeout(aimTimer); flush(); }
+  else if (!aimTimer) aimTimer = setTimeout(flush, wait);
 }
 
+function command(pl, a) {
+  if (!playing()) return;
+  if (mode === 'guest') { myAim = a; sendAim(a); return; }
+  if (!G) return;
+  if (mode === 'host') pl = 0;
+  G.inp[pl] = a;
+}
+
+/* ----- клавіатура ----- */
 const KEYS = {
-  ArrowUp: [1, 0], ArrowRight: [1, 1], ArrowDown: [1, 2], ArrowLeft: [1, 3],
-  KeyW: [0, 0], KeyD: [0, 1], KeyS: [0, 2], KeyA: [0, 3]
+  ArrowUp: [1, 0, -1], ArrowRight: [1, 1, 0], ArrowDown: [1, 0, 1], ArrowLeft: [1, -1, 0],
+  KeyW: [0, 0, -1], KeyD: [0, 1, 0], KeyS: [0, 0, 1], KeyA: [0, -1, 0]
 };
+const held = new Set();
+let keyTimer = null;
+function keysChanged() {
+  keyTimer = null;
+  const v = [[0, 0], [0, 0]];
+  for (const code of held) {
+    const k = KEYS[code], g = mode === 'local' ? k[0] : 0;   // у грі через мережу обидва набори клавіш твої
+    v[g][0] += k[1]; v[g][1] += k[2];
+  }
+  for (let g = 0; g < 2; g++) if (v[g][0] || v[g][1]) command(g, Math.atan2(v[g][1], v[g][0]));
+}
 addEventListener('keydown', e => {
-  const k = KEYS[e.code];
-  if (!k) return;
+  if (!KEYS[e.code]) return;
   audio();
   if ($('overlay').hidden) e.preventDefault();
   if (e.repeat) return;
-  input(k[0], k[1]);
+  held.add(e.code);
+  clearTimeout(keyTimer);
+  keysChanged();
 });
+addEventListener('keyup', e => {
+  if (!KEYS[e.code]) return;
+  held.delete(e.code);
+  // коротка затримка: якщо відпускаєш дві клавіші діагоналі не одночасно, напрямок не «зісковзне»
+  clearTimeout(keyTimer);
+  keyTimer = setTimeout(keysChanged, 70);
+});
+addEventListener('blur', () => releaseInput());
 
-let sw = null;
-addEventListener('pointerdown', e => { sw = { x: e.clientX, y: e.clientY, id: e.pointerId }; audio(); });
+/* ----- палець: джойстик, що з'являється там, де торкнувся ----- */
+const stick = $('stick'), knob = $('knob');
+const STICK_R = 44, DEAD = 9;
+let st = null, mouseAim = false;
+
+function stickPlace(x, y, on) {
+  stick.style.transform = 'translate(' + (x - 48) + 'px,' + (y - 48) + 'px)';
+  stick.classList.toggle('on', on);
+}
+function stickIdle() {
+  st = null;
+  knob.style.transform = 'translate(0px,0px)';
+  const z = $('padzone');
+  if (z.hidden) { stick.hidden = true; return; }
+  const r = z.getBoundingClientRect();
+  stickPlace(r.left + r.width / 2, r.top + r.height / 2, false);
+  stick.hidden = false;
+}
+function releaseInput() {
+  held.clear(); clearTimeout(keyTimer); keyTimer = null;
+  mouseAim = false;
+  if (st) stickIdle();
+}
+function aimAtPointer(e) {       // миша: дракон летить до курсора
+  const me = mode === 'guest' ? 1 : 0, vs = V.s && V.s[me];
+  if (!vs || !vs.trail.length) return;
+  const r = cv.getBoundingClientRect(), h = vs.trail[0];
+  const dx = e.clientX - (r.left + h[0] / W * r.width), dy = e.clientY - (r.top + h[1] / W * r.height);
+  if (dx * dx + dy * dy > 100) command(0, Math.atan2(dy, dx));
+}
+addEventListener('pointerdown', e => {
+  audio();
+  if (!playing() || (e.target.closest && e.target.closest('button,a,input'))) return;
+  if (e.pointerType === 'mouse') {
+    if (e.button !== 0) return;
+    mouseAim = true; aimAtPointer(e);
+    return;
+  }
+  if (st) return;
+  st = { id: e.pointerId, bx: e.clientX, by: e.clientY };
+  stick.hidden = false;
+  knob.style.transform = 'translate(0px,0px)';
+  stickPlace(st.bx, st.by, true);
+});
 addEventListener('pointermove', e => {
-  if (!sw || e.pointerId !== sw.id) return;
-  const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
-  const d = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
-  sw.x = e.clientX; sw.y = e.clientY;
-  if ($('overlay').hidden) input(0, d);
+  if (e.pointerType === 'mouse') { if (mouseAim) aimAtPointer(e); return; }
+  if (!st || e.pointerId !== st.id) return;
+  let dx = e.clientX - st.bx, dy = e.clientY - st.by;
+  const d = Math.hypot(dx, dy);
+  if (d > STICK_R) {             // основа їде за пальцем, тож розвернутись можна коротким рухом
+    st.bx = e.clientX - dx / d * STICK_R; st.by = e.clientY - dy / d * STICK_R;
+    dx = e.clientX - st.bx; dy = e.clientY - st.by;
+    stickPlace(st.bx, st.by, true);
+  }
+  knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  if (d > DEAD) command(0, Math.atan2(dy, dx));
 });
-addEventListener('pointerup', () => { sw = null; });
-addEventListener('pointercancel', () => { sw = null; });
+const pointerEnd = e => {
+  if (e.pointerType === 'mouse') { mouseAim = false; return; }
+  if (st && e.pointerId === st.id) stickIdle();
+};
+addEventListener('pointerup', pointerEnd);
+addEventListener('pointercancel', pointerEnd);
 
+/* ----- кнопки ----- */
 $('b-host').addEventListener('click', hostStart);
 $('b-local').addEventListener('click', startLocal);
 $('b-quit').addEventListener('click', toMenu);
 document.querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', toMenu));
+
+$('b-go').addEventListener('click', () => {
+  if (mode !== 'guest' || !conn || !conn.open) return;
+  keepAwake();
+  try { conn.send({ t: 'again' }); } catch (e) {}
+});
 
 $('b-again').addEventListener('click', () => {
   if (mode === 'guest') { if (conn && conn.open) { try { conn.send({ t: 'again' }); } catch (e) {} } }
@@ -1022,11 +1337,11 @@ $('b-copy').addEventListener('click', async () => {
   let ok = false;
   try { await navigator.clipboard.writeText(el.value); ok = true; }
   catch (e) { try { el.focus(); el.select(); ok = document.execCommand('copy'); } catch (e2) {} }
-  btn.textContent = ok ? 'Скопійовано' : 'Виділи й скопіюй вручну';
+  btn.textContent = ok ? 'Скопійовано' : 'Виділи вручну';
   setTimeout(() => { btn.textContent = 'Скопіювати'; }, 1800);
 });
 $('b-share').addEventListener('click', () => {
-  try { navigator.share({ title: 'Два дракони', text: 'Заходь, пограємо в драконів', url: $('link').value }).catch(() => {}); } catch (e) {}
+  try { navigator.share({ title: 'Два дракони', text: SHARE_TEXT, url: $('link').value }).catch(() => {}); } catch (e) {}
 });
 $('link').addEventListener('focus', e => e.target.select());
 

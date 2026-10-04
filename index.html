@@ -99,6 +99,9 @@ canvas{display:block}
 .pips i{aspect-ratio:1;border-radius:50%;border:2px solid var(--ink);background:var(--yellow);transition:background-color .18s}
 .pips i.p{background:var(--pink)}
 .pips i.b{background:var(--blue)}
+/* бліді кружечки: свої шматочки, які ще лежать на підлозі (скільки кружечків і де розрив, вирішує режим гри) */
+.pips i.pe{background:#ffd3e8}
+.pips i.be{background:#d3e1ff}
 
 /* кнопки-значки в кутку */
 .tools{position:absolute;z-index:6;left:10px;top:calc(var(--top) + 12px);display:flex;flex-direction:column;align-items:flex-start;gap:8px}
@@ -171,6 +174,16 @@ h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);l
 .fine{font-size:13px;color:var(--mute)}
 .status{font-size:15px;font-weight:500;min-height:1.45em}
 .status:empty{display:none}
+
+/* перемикач режиму */
+.modes{display:flex;flex-wrap:wrap;gap:8px}   /* режимів може бути скільки завгодно: кнопки самі стають у рядки */
+.mode{
+  appearance:none;-webkit-appearance:none;cursor:pointer;flex:1 1 120px;
+  border:3px solid var(--ink);border-radius:12px;background:var(--paper);
+  font:700 15px/1.2 var(--text);color:var(--ink);padding:10px 8px;
+}
+.mode.on{background:var(--yellow)}
+.mode-note{margin-top:8px}
 
 /* правила в картинках */
 .how{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;text-align:left}
@@ -281,7 +294,8 @@ a.btn{display:block;text-align:center;text-decoration:none}
     <div class="overlay" id="overlay">
       <section class="panel" id="p-menu">
         <h1 class="title">Два дракони</h1>
-        <p class="lead">Два дракони їздять і збирають шматочки на хвіст. Через дві хвилини перемагає той, у кого хвіст довший.</p>
+        <p class="lead">Два дракони їздять і збирають шматочки на хвіст.</p>
+        <div id="menu-modes"></div>
         <div class="how" id="menu-how"></div>
         <button class="btn primary" id="b-host">Грати вдвох за посиланням</button>
         <button class="btn" id="b-local">Удвох на одній клавіатурі</button>
@@ -291,6 +305,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
       <section class="panel" id="p-room" hidden>
         <h2 id="room-title">Кімната для двох</h2>
         <p class="lead" id="room-lead"></p>
+        <div id="room-modes" hidden></div>
         <div class="how" id="room-how" hidden></div>
         <p class="fine" id="join-controls" hidden></p>
         <input class="link" id="link" readonly hidden aria-label="Посилання на кімнату">
@@ -317,6 +332,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
         </div>
         <p class="lead" id="over-note"></p>
         <p class="fine" id="over-series"></p>
+        <div id="over-modes"></div>
         <button class="btn primary" id="b-again">Зіграти ще раз</button>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
@@ -348,7 +364,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
       <circle class="ink bl" cx="59" cy="46" r="12.5"/>
       <circle class="ink wh" cx="53.5" cy="41" r="3.6"/><circle class="ink wh" cx="64.5" cy="41" r="3.6"/><circle class="dk" cx="53.5" cy="39.7" r="1.6"/><circle class="dk" cx="64.5" cy="39.7" r="1.6"/>
     </svg>
-    <figcaption>В’їдь головою в хвіст, і він порветься. Що відпало, забере будь-хто.</figcaption>
+    <figcaption>В’їдь головою в хвіст, і він порветься.<span class="cut-note"></span></figcaption>
   </figure>
   <figure>
     <svg viewBox="0 0 120 70" aria-hidden="true">
@@ -421,6 +437,85 @@ let G = null;                    // справжній стан гри (лише
 const V = { s: null, food: [], phase: null, n: 0, off: null, z: false, demo: false, scat: new Map(), bumps: [] };   // те, що малюємо
 let loop = null;
 let lastPhase = null, lastCountNum = null, lastSec = -1;
+/* =====================================================================
+   РЕЖИМИ ГРИ
+   Кожен режим — один запис у списку MODES. Решта гри про конкретні режими нічого не знає:
+   вона лише питає поточний режим, як розкласти шматочки, хто що може підібрати, коли раунд
+   закінчився і що показати на табло. Тому, щоб додати новий режим, досить описати його тут:
+   перемикач у меню, табло, підсумок раунду й передача мережею підхопляться самі.
+
+   Поля режиму:
+     label            назва на перемикачі
+     note             одне-два речення під перемикачем: у чому мета
+     cutNote          що стається зі шматочками після розриву хвоста (підпис до картинки з правилами)
+     seconds          тривалість раунду; 0 — без обмеження, секундомір іде вгору
+     colored          чи мають шматочки господаря (тоді вони малюються його кольором)
+     pieces(h)        розклад на старті: список [x, y, чий]; h.mirrored(пар, чийА, чийБ) дає чесний дзеркальний розклад
+     canPick(own, i)  чи може дракон i підібрати шматочок, що належить own (-1 — нічий)
+     dropOwner(t)     чиїм стає шматочок, який відпав від хвоста дракона t
+     finished(G)      чи закінчився раунд достроково (необов'язкове)
+     winner(a, b)     хто переміг за довжинами хвостів: 0, 1 або -1 (нічия)
+     pips(a, b)       табло: { c: класи кружечків ('p', 'b', 'pe', 'be' або ''), gap: після якого кружечка розрив (0 — без розриву) }
+     pipsLabel(a, b)  те саме словами (для читалок екрана)
+     overNote(r)      речення на екрані підсумку; r = { win, a, b, time, online, mine }
+
+   Порядок записів важливий лише тим, що так вони стоять на перемикачі.
+   ===================================================================== */
+const byLength = (a, b) => a === b ? -1 : (a > b ? 0 : 1);
+const MODES = {
+  race: {
+    label: 'Хто довший',
+    note: 'Шматочки спільні. Через дві хвилини перемагає той, у кого хвіст довший.',
+    cutNote: 'Що відпало, забере будь-хто.',
+    seconds: 120,
+    colored: false,
+    pieces: h => h.mirrored(BLOCKS / 2, -1, -1),
+    canPick: () => true,
+    dropOwner: () => -1,
+    winner: byLength,
+    pips(a, b) {                 // рожеві зліва, сині справа, жовті посередині ще лежать на підлозі
+      const c = [];
+      for (let k = 0; k < BLOCKS; k++) c.push(k < a ? 'p' : k >= BLOCKS - b ? 'b' : '');
+      return { c, gap: 0 };
+    },
+    pipsLabel: (a, b) => NAMES[0] + ': ' + a + ', ' + NAMES[1] + ': ' + b + ', на підлозі: ' + Math.max(0, BLOCKS - a - b),
+    overNote: r => r.win < 0 ? 'Хвости однакові. Потрібен ще один раунд.'
+      : !r.online ? 'У неї хвіст довший на ' + Math.abs(r.a - r.b) + '.'
+      : r.mine ? 'Це твій дракон. Хвіст довший на ' + Math.abs(r.a - r.b) + '.' : 'Це дракон суперника. Реванш?'
+  },
+  classic: {
+    label: 'Класика',
+    note: 'Як у справжній грі: у кожного 8 шматочків свого кольору. Перемагає той, хто першим збере всі свої.',
+    cutNote: 'Що відпало, підбере лише власник.',
+    seconds: 0,
+    colored: true,
+    goal: BLOCKS / 2,            // стільки шматочків у кожного
+    pieces(h) { return h.mirrored(this.goal, 0, 1); },
+    canPick: (own, i) => own === i,
+    dropOwner: t => t,
+    finished(G) { return G.snakes[0].len >= this.goal || G.snakes[1].len >= this.goal; },
+    winner: byLength,
+    pips(a, b) {                 // дві групи: яскраві кружечки вже на хвості, бліді ще чекають на підлозі
+      const c = [], n = this.goal;
+      for (let k = 0; k < n; k++) c.push(k < a ? 'p' : 'pe');
+      for (let k = 0; k < n; k++) c.push(n - 1 - k < b ? 'b' : 'be');
+      return { c, gap: n };
+    },
+    pipsLabel(a, b) { return NAMES[0] + ': ' + a + ' з ' + this.goal + ', ' + NAMES[1] + ': ' + b + ' з ' + this.goal; },
+    overNote(r) {
+      return r.win < 0 ? 'Обидва зібрали все одночасно. Потрібен ще один раунд.'
+        : !r.online ? 'Зібрала всі ' + this.goal + ' своїх шматочків за ' + r.time + '.'
+        : r.mine ? 'Це твій дракон. Усі ' + this.goal + ' своїх шматочків зібрано за ' + r.time + '.'
+        : 'Це дракон суперника: усі ' + this.goal + ' своїх він зібрав за ' + r.time + '. Реванш?';
+    }
+  }
+};
+const MODE_IDS = Object.keys(MODES);
+const modeOf = id => MODES[id] || MODES[MODE_IDS[0]];
+V.M = MODES[MODE_IDS[0]];           // режим раунду, який зараз показуємо на екрані
+let gmode = MODE_IDS[0];             // режим, вибраний для наступного раунду
+try { const saved = localStorage.getItem('dva-drakony-mode'); if (MODES[saved]) gmode = saved; } catch (e) {}
+
 let series = [0, 0];                 // рахунок серії раундів: [я, суперник], а на одній клавіатурі [Жаринка, Хвилька]
 let myAim = null;                    // куди я кермую (для гостя)
 let lastInput = '';                  // mouse | keys | touch
@@ -443,25 +538,36 @@ function mkSnake(x, y, a) {
 const segAt = (s, i) => s.trail[Math.min(i * K, s.trail.length - 1)];
 const paused = () => !!(G && (G.pz.h || G.pz.g || G.pz.n));   // h, g: хтось згорнув гру; n: зник зв'язок
 
-function newGame() {
+// Допомога режимам у розкладанні шматочків. Розклад дзеркальний відносно центру: кожному шматочку
+// з одного боку відповідає такий самий з іншого, тож стартові умови в обох драконів однакові.
+const layout = {
+  mirrored(pairs, ownA, ownB) {
+    const out = [];
+    let guard = 0;
+    const far = (x, y) => !G.snakes.some(s => (x - s.x) ** 2 + (y - s.y) ** 2 < 100) && !out.some(f => (x - f[0]) ** 2 + (y - f[1]) ** 2 < 64);
+    while (out.length < pairs * 2 && guard++ < 4000) {
+      const r = 5 + Math.sqrt(Math.random()) * (ARENA - 10), t = rand(0, TAU);
+      const x = r2(Math.cos(t) * r), y = r2(Math.sin(t) * r);
+      if (!far(x, y) || !far(-x, -y)) continue;
+      out.push([x, y, ownA], [-x, -y, ownB]);
+    }
+    return out;
+  }
+};
+
+function newGame(modeId) {
+  const M = modeOf(modeId);
   G = {
-    phase: 'count', count: COUNT_TICKS, ticksLeft: ROUND_TICKS, n: 0,
+    mode: MODES[modeId] ? modeId : MODE_IDS[0], M,
+    phase: 'count', count: COUNT_TICKS, n: 0,
+    ticksLeft: M.seconds ? Math.round(M.seconds * 1000 / TICK) : 0,   // без обмеження часу лічильник іде вгору
     food: [], fdirty: true, needInit: true, iv: 0, fv: 0, frep: 0, eid: 0, evs: [], initAt: 0,
     inp: [null, null],
     pz: { h: document.visibilityState === 'hidden', g: false, n: false },
     snakes: [mkSnake(-ARENA * .62, -6, 0), mkSnake(ARENA * .62, 6, Math.PI)]
   };
-  // Розкидаємо всі шматочки по підлозі; більше їх не з'явиться.
-  // Розклад дзеркальний відносно центру: кожному шматочку з одного боку відповідає такий самий з іншого,
-  // тож стартові умови в обох драконів однакові.
-  let guard = 0;
-  while (G.food.length < BLOCKS && guard++ < 4000) {
-    const r = 5 + Math.sqrt(Math.random()) * (ARENA - 10), t = rand(0, TAU);
-    const x = r2(Math.cos(t) * r), y = r2(Math.sin(t) * r);
-    const far = (px, py) => !G.snakes.some(s => (px - s.x) ** 2 + (py - s.y) ** 2 < 100) && !G.food.some(f => (px - f[0]) ** 2 + (py - f[1]) ** 2 < 64);
-    if (!far(x, y) || !far(-x, -y)) continue;
-    G.food.push([x, y, 0], [-x, -y, 0]);
-  }
+  // шматочок: [x, y, з якого кроку його можна підібрати, чий він (-1 — нічий)]; нових під час раунду не з'являється
+  G.food = M.pieces(layout).map(p => [p[0], p[1], 0, p[2]]);
 }
 
 // стіна майданчика: дракон не відскакує, а ковзає вздовж неї
@@ -490,7 +596,7 @@ function cutTail(by, t, j, ev) {
     const r = Math.hypot(tx, ty), max = ARENA - 2.5;
     if (r > max) { tx *= max / r; ty *= max / r; }
     tx = r2(tx); ty = r2(ty);
-    G.food.push([tx, ty, G.n + LOOSE_TICKS]);
+    G.food.push([tx, ty, G.n + LOOSE_TICKS, G.M.dropOwner(t)]);
     sc.push(r2(p[0]), r2(p[1]), tx, ty);
   }
   const hit = segAt(s, j);
@@ -546,14 +652,15 @@ function step(ev) {
   });
   // Голова наїхала на шматочок: він чіпляється до хвоста.
   // Якщо обидві голови дотяглися в той самий крок, шматочок дістається ближчій; за рівної відстані — жереб.
-  const rr2 = (R_HEAD + R_FOOD + .6) ** 2;
+  const rr2 = (R_HEAD + R_FOOD + .6) ** 2, M = G.M;
   for (let k = G.food.length - 1; k >= 0; k--) {
     const f = G.food[k];
     if (G.n < f[2]) continue;
     const d0 = (G.snakes[0].x - f[0]) ** 2 + (G.snakes[0].y - f[1]) ** 2;
     const d1 = (G.snakes[1].x - f[0]) ** 2 + (G.snakes[1].y - f[1]) ** 2;
-    if (d0 >= rr2 && d1 >= rr2) continue;
-    const i = d0 < rr2 && d1 < rr2 ? (Math.abs(d0 - d1) < 1e-9 ? (Math.random() < .5 ? 0 : 1) : (d0 < d1 ? 0 : 1)) : (d0 < rr2 ? 0 : 1);
+    const c0 = d0 < rr2 && M.canPick(f[3], 0), c1 = d1 < rr2 && M.canPick(f[3], 1);   // хто дотягнувся і кому режим дозволяє
+    if (!c0 && !c1) continue;
+    const i = c0 && c1 ? (Math.abs(d0 - d1) < 1e-9 ? (Math.random() < .5 ? 0 : 1) : (d0 < d1 ? 0 : 1)) : (c0 ? 0 : 1);
     G.snakes[i].len++;
     ev.push(['e', i, f[0], f[1]]);
     G.food.splice(k, 1);
@@ -577,7 +684,12 @@ function step(ev) {
     });
     for (const c of cuts) if (c[2] <= G.snakes[c[1]].len) cutTail(c[0], c[1], c[2], ev);
   }
-  if (!G.demo && --G.ticksLeft <= 0) { G.phase = 'over'; ev.push(['o']); }
+  if (G.demo) return;
+  // кінець раунду: вийшов час (якщо режим його обмежує) або режим каже, що мету досягнуто
+  let done = false;
+  if (M.seconds) done = --G.ticksLeft <= 0; else G.ticksLeft++;
+  if (!done && M.finished) done = M.finished(G);
+  if (done) { G.phase = 'over'; ev.push(['o']); }
 }
 
 /* Формат стану.
@@ -611,13 +723,17 @@ function pack(ev) {
   };
   if (G.evs.length) m.e = G.evs.map(x => [x[0], x[2]]);
   if (G.demo) m.demo = 1;
-  if (G.frep > 0) { G.frep--; m.f = G.food.map(f => [ci(f[0]), ci(f[1])]).flat(); }
+  m.md = MODE_IDS.indexOf(G.mode);
+  if (G.frep > 0) { G.frep--; m.f = foodWire(); }
   return m;
 }
+// шматочки в дорогу: пари координат, а в класиці ще й колір
+const foodWire = () => G.food.map(f => G.M.colored ? [ci(f[0]), ci(f[1]), f[3]] : [ci(f[0]), ci(f[1])]).flat();
+const decFood = (a, colored) => { if (!colored) return dec(a); const o = []; for (let k = 0; k + 2 < a.length; k += 3) o.push([a[k] / 100, a[k + 1] / 100, a[k + 2]]); return o; };
 // У дорогу стан іде не об'єктом із назвами полів, а щільним списком чисел: так він майже вдвічі коротший.
 const PHASES = ['count', 'play', 'over'];
 function encState(m) {
-  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0), m.c, m.tl, m.iv, m.fv, m.lg];
+  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0) + m.md * 32, m.c, m.tl, m.iv, m.fv, m.lg];
   for (const o of m.s) a.push([o.c, Math.round(o.a * 1000), o.l].concat(o.h));
   a.push(m.e || 0);
   if (m.f) a.push(m.f);
@@ -627,7 +743,7 @@ function decState(a) {
   if (!Array.isArray(a) || a.length < 11 || !Array.isArray(a[8]) || !Array.isArray(a[9])) return null;
   const fl = a[2], S = x => ({ c: x[0], a: x[1] / 1000, l: x[2], h: x.slice(3) });
   return {
-    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, c: a[3], tl: a[4], iv: a[5], fv: a[6], lg: a[7],
+    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, md: fl >> 5, c: a[3], tl: a[4], iv: a[5], fv: a[6], lg: a[7],
     s: [S(a[8]), S(a[9])], e: a[10] || null, f: a[11] || null
   };
 }
@@ -635,9 +751,9 @@ function decState(a) {
 function packInit() {             // повна картина: усі сліди й шматочки
   G.iv = ++ivSeq; G.needInit = false; G.initAt = performance.now();
   return {
-    iv: G.iv, n: G.n, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0),
+    iv: G.iv, n: G.n, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0), md: MODE_IDS.indexOf(G.mode),
     s: G.snakes.map(s => ({ c: s.pc, tr: s.trail.map(p => [ci(p[0]), ci(p[1])]).flat(), a: r3(s.a), l: s.len })),
-    f: G.food.map(f => [ci(f[0]), ci(f[1])]).flat()
+    f: foodWire()
   };
 }
 
@@ -731,7 +847,7 @@ function setPause(who, v) {
 // показ за меню: два дракони самі їздять і збирають шматочки, щоб одразу було видно, що це за гра
 function startDemo() {
   if (REDUCED) return;
-  newGame();
+  newGame('race');
   G.demo = true; G.phase = 'play'; G.idle = 0;
   resetView();
   emit([]);
@@ -758,7 +874,7 @@ function demoAI() {
 
 function resetView() {
   V.s = null; V.food = []; V.phase = null; V.n = 0; V.off = null; V.z = false; V.demo = false;
-  V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; V.jit = 0; V.lossAt = -1e9; redraw = true;
+  V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; V.jit = 0; V.lossAt = -1e9; V.M = MODES.race; V.sec = 0; redraw = true;
   cams[0].on = cams[1].on = false;
   V.scat.clear(); V.bumps.length = 0;
   viewQ.length = 0; aimQ.length = 0; viewAt = 0; aimAt = 0;
@@ -769,7 +885,7 @@ function resetView() {
 }
 
 function startMatch() {
-  newGame();
+  newGame(gmode);
   resetView();
   emit([]);
   startLoop();
@@ -778,13 +894,15 @@ function startMatch() {
 /* =====================================================================
    ПРИЙОМ СТАНУ (однаково для обох гравців)
    ===================================================================== */
-function unflat(a, k) { const o = []; for (let i = 0; i + k <= a.length; i += k) o.push(a.slice(i, i + k)); return o; }
 const hudCache = {};
+let timerLow = false;
+const fmtTime = sec => Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 function setText(id, t) { if (hudCache[id] !== t) { hudCache[id] = t; $(id).textContent = t; } }
 
 function applyInit(i) {            // повна картина прийшла: починаємо з чистого аркуша
   V.s = i.s.map(o => ({ trail: dec(o.tr), pc: o.c, adv: [], a: o.a, len: o.l }));
-  V.food = dec(i.f); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false; V.n = i.n;
+  V.M = modeOf(MODE_IDS[i.md]);
+  V.food = decFood(i.f, V.M.colored); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false; V.n = i.n;
   V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
 }
 
@@ -813,7 +931,7 @@ function applyState(m, at) {
     vs.a = o.a; vs.len = o.l;
   }
   if (m.fv !== V.fv) {
-    if (m.f) { V.food = dec(m.f); V.fv = m.fv; } else V.needSync = true;
+    if (m.f) { V.food = decFood(m.f, V.M.colored); V.fv = m.fv; } else V.needSync = true;
   }
   V.phase = m.p; V.n = m.n; V.z = m.z || 0; V.lg = m.lg || 0;
 
@@ -833,11 +951,15 @@ function applyState(m, at) {
   if ($('hud').hidden) { $('hud').hidden = false; layoutInsets(); }
   setText('s0', String(m.s[0].l));
   setText('s1', String(m.s[1].l));
-  setPips($('pips'), m.s[0].l, m.s[1].l);
-  const sec = Math.max(0, Math.ceil(m.tl * TICK / 1000));
-  setText('timer', Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'));
-  $('timer').classList.toggle('low', m.p === 'play' && sec <= 10);
-  if (m.p === 'play' && sec !== lastSec && sec <= 5 && sec > 0) beep(740, .05, 'square', .04);   // останні секунди чути
+  const M = V.M, timed = M.seconds > 0;
+  setPips($('pips'), M, m.s[0].l, m.s[1].l);
+  // якщо час обмежений, секундомір іде вниз; якщо ні — вгору (скільки триває раунд)
+  const sec = timed ? Math.max(0, Math.ceil(m.tl * TICK / 1000)) : Math.floor(m.tl * TICK / 1000);
+  V.sec = sec;
+  setText('timer', fmtTime(sec));
+  const low = timed && m.p === 'play' && sec <= 10;
+  if (low !== timerLow) { timerLow = low; $('timer').classList.toggle('low', low); }
+  if (timed && m.p === 'play' && sec !== lastSec && sec <= 5 && sec > 0) beep(740, .05, 'square', .04);   // останні секунди чути
   lastSec = sec;
 
   for (const e of evs) if (e[0] > V.eid) { V.eid = e[0]; fx(e[1], now, false); }   // кожна подія спрацьовує один раз, хоч і приходить кілька разів
@@ -884,26 +1006,30 @@ function fx(e, now, quiet) {
 }
 
 // смужка з 16 кружечків: скільки шматочків у кожного дракона і скільки лежить на підлозі
-function setPips(el, a, b) {
-  if (el.children.length !== BLOCKS) { el.textContent = ''; for (let k = 0; k < BLOCKS; k++) el.appendChild(document.createElement('i')); }
-  for (let k = 0; k < BLOCKS; k++) {
-    const c = k < a ? 'p' : k >= BLOCKS - b ? 'b' : '';
-    const it = el.children[k];
-    if (it.className !== c) it.className = c;
+// Табло з кружечків. Що саме вони означають, вирішує режим (див. pips у MODES);
+// тут лише малюємо те, що він сказав, і чіпаємо сторінку тільки коли щось змінилось.
+function setPips(el, M, a, b) {
+  const key = (M.label || '') + '|' + a + '|' + b;
+  if (el._key === key) return;
+  el._key = key;
+  const spec = M.pips(a, b), n = spec.c.length;
+  if (el.children.length !== n) { el.textContent = ''; for (let k = 0; k < n; k++) el.appendChild(document.createElement('i')); }
+  const cols = spec.gap ? 'repeat(' + spec.gap + ',1fr) 6px repeat(' + (n - spec.gap) + ',1fr)' : 'repeat(' + n + ',1fr)';
+  if (el._cols !== cols) {
+    el._cols = cols; el.style.gridTemplateColumns = cols;
+    for (let k = 0; k < n; k++) el.children[k].style.gridColumnStart = spec.gap && k === spec.gap ? String(spec.gap + 2) : '';
   }
-  el.setAttribute('aria-label', NAMES[0] + ': ' + a + ', ' + NAMES[1] + ': ' + b + ', на підлозі: ' + Math.max(0, BLOCKS - a - b));
+  for (let k = 0; k < n; k++) { const it = el.children[k]; if (it.className !== spec.c[k]) it.className = spec.c[k]; }
+  el.setAttribute('aria-label', M.pipsLabel(a, b));
 }
 
 function showOver(a, b) {
-  const win = a === b ? -1 : (a > b ? 0 : 1);
+  const M = V.M, win = M.winner(a, b);
   const online = mode === 'host' || mode === 'guest', me = mode === 'guest' ? 1 : 0;
   $('over-title').textContent = win < 0 ? 'Нічия' : 'Перемогла ' + NAMES[win];
   $('over-a').textContent = a; $('over-b').textContent = b;
-  setPips($('over-pips'), a, b);
-  $('over-note').textContent =
-    win < 0 ? 'Хвости однакові. Потрібен ще один раунд.' :
-    !online ? 'У неї хвіст довший на ' + Math.abs(a - b) + '.' :
-    win === me ? 'Це твій дракон. Хвіст довший на ' + Math.abs(a - b) + '.' : 'Це дракон суперника. Реванш?';
+  setPips($('over-pips'), M, a, b);
+  $('over-note').textContent = M.overNote({ win, a, b, time: fmtTime(V.sec), online, mine: win === me });
   if (win >= 0) series[online ? (win === me ? 0 : 1) : win]++;
   $('over-series').textContent = online
     ? 'Серія раундів: ти ' + series[0] + ' : ' + series[1] + ' суперник'
@@ -921,7 +1047,7 @@ let CW = 0, CH = 0, DPR = 1, U = 6;
 const TILE = 80;                 // розмір плитки тла в одиницях
 let arena = null, arenaU = 0, arenaDpr = 0;
 const OUTSIDE = '#d6d4e8';        // колір за межами майданчика
-let vis = { x0: 0, x1: 0, y0: 0, y1: 0 };
+const vis = { x0: 0, x1: 0, y0: 0, y1: 0 };   // яку частину майданчика зараз видно
 
 let hudB = 0, hudL = 1e9, hudR = -1e9, mapTop = 12;   // де лежить табло: мінікарта й кнопки його обходять
 function resize() {
@@ -1095,6 +1221,7 @@ function makeSprites() {
   spr = {
     seg: COL.map(c => TAPER.map(q => [disc(R_SEG * U * q, c.alt, c.light, lw), disc(R_SEG * U * q, c.main, c.light, lw)])),
     food: disc(R_FOOD * U, '#ffd91a', '#fff6b8', Math.max(1.1, U * .26)),
+    foodC: COL.map(c => disc(R_FOOD * U, c.main, c.light, Math.max(1.1, U * .26))),   // класика: шматочки кольору свого дракона
     head: PALS.map(pal => sprite(hr * 1.45 + lw, g => paintHead(g, hr, lw, pal))),
     hr
   };
@@ -1160,10 +1287,10 @@ function drawAim(ps, aim, idx) {
   ctx.restore();
 }
 
-function drawFood(x, y, now, scale) {
+function drawFood(x, y, now, scale, own) {
   if (!seen(x, y, 3)) return;
   const pul = REDUCED ? 1 : 1 + .06 * Math.sin(now / 260 + x * 1.7 + y * .9);
-  const c = spr.food, h = c._h * pul * scale;
+  const c = own >= 0 ? spr.foodC[own] : spr.food, h = c._h * pul * scale;
   ctx.drawImage(c._bmp || c, x * U - h, y * U - h, h * 2, h * 2);
 }
 
@@ -1184,10 +1311,12 @@ function miniMap(camIdx, MR, now, poses) {
   g.clearRect(-half, -half, half * 2, half * 2);
   g.fillStyle = 'rgba(246,245,251,.9)'; g.strokeStyle = INK; g.lineWidth = 2.5;
   g.beginPath(); g.arc(0, 0, MR, 0, TAU); g.fill(); g.stroke();
-  g.fillStyle = '#e2ad00';
-  g.beginPath();
-  for (const f of V.food) { g.moveTo(f[0] * ms + 1.6, f[1] * ms); g.arc(f[0] * ms, f[1] * ms, 1.6, 0, TAU); }
-  g.fill();
+  for (const own of (V.M.colored ? [0, 1] : [-1])) {  // якщо шматочки мають господарів, крапки на мінікарті теж кольорові
+    g.fillStyle = own < 0 ? '#e2ad00' : COL[own].main;
+    g.beginPath();
+    for (const f of V.food) { if (own >= 0 && f[2] !== own) continue; g.moveTo(f[0] * ms + 1.6, f[1] * ms); g.arc(f[0] * ms, f[1] * ms, 1.6, 0, TAU); }
+    g.fill();
+  }
   for (const i of (camIdx === 0 ? [1, 0] : [0, 1])) {
     const vs = V.s[i], tr = vs.trail;
     g.strokeStyle = COL[i].main; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
@@ -1232,7 +1361,7 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
   const sx = shake > .4 ? (Math.random() - .5) * 2 * shake : 0, sy = shake > .4 ? (Math.random() - .5) * 2 * shake : 0;
   // де на екрані центр майданчика; округлюємо до цілого пікселя, щоб підлога й дракони рухались узгоджено
   const acx = Math.round((vx + vw / 2 - cam.x * U + sx) * DPR) / DPR, acy = Math.round((vy + vh / 2 - cam.y * U + sy) * DPR) / DPR;
-  vis = { x0: cam.x - vw / 2 / U, x1: cam.x + vw / 2 / U, y0: cam.y - vh / 2 / U, y1: cam.y + vh / 2 / U };
+  vis.x0 = cam.x - vw / 2 / U; vis.x1 = cam.x + vw / 2 / U; vis.y0 = cam.y - vh / 2 / U; vis.y1 = cam.y + vh / 2 / U;
   // готовий майданчик копіюємо піксель у піксель
   const aw = arena.width / arena._scale, ax = Math.round(acx * DPR - aw / 2), ay = Math.round(acy * DPR - aw / 2);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1248,18 +1377,18 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
   if (poses) {
     // шматочки; ті, що щойно відірвались від хвоста, зсуваються від місця удару
     for (const f of V.food) {
-      const sc = V.scat.size ? V.scat.get(f[0] + ',' + f[1]) : null;
+      const sc = V.scat.size ? V.scat.get(f[0] + ',' + f[1]) : null, own = V.M.colored ? f[2] : -1;
       if (sc) {
         const t = (now - sc.t0) / 420;
-        if (t >= 1) { V.scat.delete(f[0] + ',' + f[1]); drawFood(f[0], f[1], now, 1); }
-        else { const e = 1 - (1 - t) * (1 - t); drawFood(sc.fx + (f[0] - sc.fx) * e, sc.fy + (f[1] - sc.fy) * e, now, 1); }
-      } else drawFood(f[0], f[1], now, 1);
+        if (t >= 1) { V.scat.delete(f[0] + ',' + f[1]); drawFood(f[0], f[1], now, 1, own); }
+        else { const e = 1 - (1 - t) * (1 - t); drawFood(sc.fx + (f[0] - sc.fx) * e, sc.fy + (f[1] - sc.fy) * e, now, 1, own); }
+      } else drawFood(f[0], f[1], now, 1, own);
     }
     for (const f of fly) {
       const t = (now - f.t0) / 150, h = poses[f.i];
       if (t >= 1 || !h) continue;
       const e = t * t;
-      drawFood(f.x + (h.x - f.x) * e, f.y + (h.y - f.y) * e, now, 1 - .75 * t);
+      drawFood(f.x + (h.x - f.x) * e, f.y + (h.y - f.y) * e, now, 1 - .75 * t, V.M.colored ? f.i : -1);
     }
     const aims = [null, null];
     if (V.phase === 'play' && !V.z) {
@@ -1424,8 +1553,36 @@ const CONTROLS = (TOUCH
   + ' Умови рівні: затримку мережі гра робить однаковою для обох.';
 $('join-controls').textContent = CONTROLS;
 if (TOUCH) $('b-local').hidden = true;   // режим «одна клавіатура на двох» на телефоні не має сенсу
+// Перемикач режиму будується зі списку MODES, тож новий режим з'являється на ньому сам.
+// Вибрати може будь-хто з двох: вибір одразу видно в обох і діє з наступного раунду.
+function buildModeSwitch(slot) {
+  const box = document.createElement('div');
+  box.className = 'modes'; box.setAttribute('role', 'radiogroup'); box.setAttribute('aria-label', 'Режим гри');
+  for (const id of MODE_IDS) {
+    const b = document.createElement('button');
+    b.className = 'mode'; b.dataset.mode = id; b.setAttribute('role', 'radio'); b.textContent = MODES[id].label;
+    b.addEventListener('click', () => setMode(id));
+    box.appendChild(b);
+  }
+  const note = document.createElement('p');
+  note.className = 'fine mode-note';
+  slot.append(box, note);
+}
+function setMode(v, fromNet) {
+  gmode = MODES[v] ? v : MODE_IDS[0];
+  const M = MODES[gmode];
+  try { localStorage.setItem('dva-drakony-mode', gmode); } catch (e) {}
+  document.querySelectorAll('.mode').forEach(b => { const on = b.dataset.mode === gmode; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); });
+  document.querySelectorAll('.mode-note').forEach(p => { p.textContent = M.note; });
+  document.querySelectorAll('.cut-note').forEach(p => { p.textContent = ' ' + M.cutNote; });
+  if (fromNet || !linked) return;
+  if (mode === 'host') netSend({ t: 'cfg', md: gmode });
+  else if (mode === 'guest') netSend({ t: 'mode', v: gmode });
+}
+for (const id of ['menu-modes', 'room-modes', 'over-modes']) buildModeSwitch($(id));
 // правила в картинках: одна заготовка для меню й кімнати
 for (const id of ['menu-how', 'room-how']) $(id).appendChild($('tpl-how').content.cloneNode(true));
+setMode(gmode, true);
 
 function setChrome() {
   $('tag0').textContent = mode === 'host' ? 'ти' : mode === 'local' ? 'W A S D' : '';
@@ -1471,7 +1628,7 @@ function roomView(state) {
       : 'Посилання одне на двох: хто відкрив першим, чекає тут на другого.';
   }
   $('link').hidden = !waiting; $('link-btns').hidden = !waiting;
-  $('room-how').hidden = !ready; $('join-controls').hidden = !ready;   // правила показуємо перед стартом, щоб вікно лишалось компактним
+  $('room-how').hidden = !ready; $('join-controls').hidden = !ready; $('room-modes').hidden = !ready;   // правила показуємо перед стартом, щоб вікно лишалось компактним
   $('file-note').hidden = !(waiting && location.protocol === 'file:');
   $('b-go').hidden = !ready; $('b-go').disabled = !ready;
   if (waiting) roomStatus('Чекаю на другого гравця…');
@@ -1606,7 +1763,6 @@ function loadMqtt() {
 }
 const LIB_FAIL = 'Не вдалося завантажити мережеву частину гри. Перевір інтернет і онови сторінку.';
 const NO_SIGNAL = 'Не вдається дістатися серверів, які з’єднують гравців. Перевір інтернет, гра пробує далі…';
-const inRoom = () => mode === 'room' || mode === 'host' || mode === 'guest';
 
 let net = null;          // усе про поточне підключення до кімнати
 let linked = false;      // обоє гравців у кімнаті й чують одне одного
@@ -1901,6 +2057,7 @@ function linkUp(N) {                     // обоє в кімнаті
   N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = [];
   roomView('ready');
   if (!G) show('room');
+  if (mode === 'host') netSend({ t: 'cfg', md: gmode });   // другому гравцеві одразу показуємо вибраний режим
   showVia();
   document.title = 'Обоє в кімнаті';
   beep(660, .1); setTimeout(() => beep(880, .16), 120);
@@ -1940,6 +2097,7 @@ function relink(N, from) {
   lastSeen = performance.now();
   if (G && !G.demo) { G.needInit = true; G.inp[1] = null; G.pz.g = false; }
   pub({ t: 'hi', to: from });
+  netSend({ t: 'cfg', md: gmode });
   if (N.weak) setWeak(N, false);
   else if (G && G.phase !== 'over') emit([]);
   showVia();
@@ -2063,6 +2221,7 @@ function onHostData(m) {
   if (m.t === 'a') hostAim(m);       // напрямок другого дракона
   else if (m.t === 'pz') setPause('g', !!m.v);          // той бік згорнув або розгорнув гру
   else if (m.t === 'again') { if (!G || G.phase === 'over') startMatch(); }   // «Почати гру» або «Зіграти ще раз» з того боку
+  else if (m.t === 'mode') { setMode(m.v, true); netSend({ t: 'cfg', md: gmode }); }   // другий гравець вибрав режим: приймаємо й підтверджуємо обом
   else if (m.t === 'sync') { if (G && performance.now() - G.initAt > 250) G.needInit = true; }   // другий гравець просить повну картину
 }
 
@@ -2074,6 +2233,7 @@ function askSync(now) {            // просимо повну картину, 
 }
 function onGuestData(m) {
   if (m.t === 'i') { if (m.g) { applyInit(m.g); ivMissAt = 0; } return; }
+  if (m.t === 'cfg') { setMode(m.md, true); return; }   // який режим вибрано в кімнаті
   if (m.t !== 's') return;
   const g = decState(m.g);
   if (!g || typeof g.k !== 'number' || g.k <= lastK) return;   // старе або повторне (канал не гарантує порядку)

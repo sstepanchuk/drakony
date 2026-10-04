@@ -123,7 +123,7 @@ canvas{display:block}
 @media (hover:hover){.tool:hover{background:#fff}.tool.ask:hover,.tool.active:hover{background:var(--yellow)}}
 @media (max-width:699px){body.menu-open .tools{display:none}}
 
-.via{position:absolute;z-index:3;left:12px;bottom:calc(var(--bottom) + 8px);font-size:11px;color:var(--mute);pointer-events:none}
+.via{position:absolute;z-index:3;left:12px;bottom:calc(var(--bottom) + 8px);max-width:calc(100% - 24px);font-size:11px;color:var(--mute);white-space:pre-line;cursor:pointer}
 .coach{
   position:absolute;z-index:3;left:0;right:0;margin:0 auto;width:fit-content;bottom:calc(var(--bottom) + 34px);
   max-width:calc(100% - 24px);padding:10px 16px;border-radius:22px;pointer-events:none;text-align:center;
@@ -776,10 +776,9 @@ function packInit() {             // повна картина: усі слід�
    свіжу картинку вони бачать, і те, як швидко дракон слухається керма. */
 const viewQ = [], aimQ = [];
 let viewAt = 0, aimAt = 0;
-function lagMs() {                // оцінка шляху в один бік: половина виміряного «туди й назад»
-  const N = net;
-  if (!N || !linked || N.rtt == null) return 0;
-  return Math.min(300, N.rtt / 2);
+function lagMs() {                // оцінка шляху в один бік: половина виміряного «туди й назад» тим шляхом, яким іде гра
+  const N = net, r = N && linked ? curRtt(N) : null;
+  return r == null ? 0 : Math.min(300, r / 2);
 }
 const applyItem = it => { if (it.i) applyInit(it.i); else applyState(it.m, it.at); };
 function hostView(it) {           // картинка того, хто рахує, показується із затримкою другого гравця
@@ -1005,7 +1004,7 @@ function fx(e, now, quiet) {
     V.bumps.push({ i, x, y, nx: e[4], ny: e[5], t0: now });
     if (!REDUCED && !quiet && (mode === 'local' || i === me || e[6] === me)) shake = 8;
     beep(150, .3, 'sawtooth', .07, .4); beep(90, .2, 'square', .05, .6);
-    try { if (!quiet && (mode === 'local' || i === me) && navigator.vibrate) navigator.vibrate(60); } catch (err) {}
+    try { if (!quiet && (mode === 'local' || i === me) && navigator.vibrate && active()) navigator.vibrate(60); } catch (err) {}
   }
   else if (t === 'b') {            // голова в голову
     burst(x, y, '#ffffff', 10);
@@ -1481,7 +1480,7 @@ function frame(now) {
   redraw = false;
   // малюємо трохи позаду останнього отриманого стану, щоб рух був рівний
   if (linked && net && dcLive(net) && !dcFresh(net) && now - net.nudged > 400) {   // прямий канал замовк: одразу озиваємось через сервери
-    net.nudged = now; net.pingAt = now; netSend(pingMsg(now));
+    net.nudged = now; net.pingAt = now; const p = pingMsg(now); sendDirect(p); sendRelay(p);
   }
   const want = mode === 'guest' ? bufWant(now) : mode === 'host' ? (net && net.peerBuf) || 2 : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
@@ -1516,8 +1515,12 @@ function frame(now) {
 /* =====================================================================
    ЗВУК
    ===================================================================== */
-let AC = null, muted = false;
+let AC = null, muted = false, touched = false;
+for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { touched = true; }, { capture: true, once: true });
+// браузер дозволяє звук і вібрацію лише після першого дотику чи натискання клавіші
+const active = () => { try { return navigator.userActivation ? navigator.userActivation.hasBeenActive : touched; } catch (e) { return touched; } };
 function audio() {
+  if (!active()) return null;
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)();
     if (AC.state === 'suspended') AC.resume();
@@ -1734,26 +1737,29 @@ function startLocal() {
    гра просто лишається на серверах-посередниках і все одно працює.
    Хто зайшов першим, той рахує гру; ролі визначаються самі.
    ===================================================================== */
-// Публічні сервери повідомлень. Їх п'ять, щоб гра не залежала від одного: досить, щоб у обох гравців
+// Публічні сервери повідомлень. Їх чотири, щоб гра не залежала від одного: досить, щоб у обох гравців
 // працював хоча б один спільний. Два з них слухають на звичайному порту 443, який не блокують
 // навіть суворі мережі (робочий Wi-Fi, деякі мобільні оператори).
 const BROKERS = [
   { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
   { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' },
   { name: 'Eclipse', url: 'wss://mqtt.eclipseprojects.io/mqtt' },
-  { name: 'Shiftr', url: 'wss://public.cloud.shiftr.io', user: 'public', pass: 'public' },
-  { name: 'Mosquitto', url: 'wss://test.mosquitto.org:8081/mqtt' }
+  { name: 'Shiftr', url: 'wss://public.cloud.shiftr.io', user: 'public', pass: 'public' }
 ];
 const MQTT_URLS = [
   'https://cdn.jsdelivr.net/npm/mqtt@5/dist/mqtt.min.js',
   'https://unpkg.com/mqtt@5/dist/mqtt.min.js'
 ];
+// Власний вузол-посередник (необов'язково). Якщо двом гравцям не вдається з'єднатись напряму, гра йде
+// через сервер; чим він ближче, тим менший пінг. Безкоштовний обліковий запис на metered.ca дає вузол
+// у найближчому регіоні: впиши сюди адреси, ім'я й пароль з розділу «TURN Credentials».
+const MY_TURN = { urls: [], username: '', credential: '' };
 const ICE = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  // запасний шлях, коли напряму не пробитись: лише європейський вузол (американський додавав би до кожного пакета сотні мілісекунд)
-  { urls: 'turn:eu-0.turn.peerjs.com:3478', username: 'peerjs', credential: 'peerjsp' }
-];
+  // загальнодоступний вузол-посередник Open Relay (вузол PeerJS, яким гра користувалась раніше, закрили ще 2023 року)
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+].concat(MY_TURN.username ? [MY_TURN] : []);
 
 const store = {
   get() { try { return localStorage.getItem('dva-drakony-room'); } catch (e) { return null; } },
@@ -1869,7 +1875,7 @@ function retryBroker(N, i) {
   try { if (old) old.end(true); } catch (e) {}
   st.state = 'wait'; st.fails++;
   const anyOk = N.clients.some(c => c && c._ok);
-  const base = Math.min(anyOk ? 30000 : 2500, 1000 * Math.pow(2, Math.min(st.fails - 1, 5)));
+  const base = Math.min(anyOk ? 120000 : 2500, 1000 * Math.pow(2, Math.min(st.fails - 1, 7)));   // сервер, що вперто мовчить, пробуємо дедалі рідше (до двох хвилин)
   st.timer = setTimeout(() => { st.timer = null; if (net === N) openBroker(N, i); }, base * (.75 + Math.random() * .5));
 }
 // те саме, але негайно (після зміни мережі чекати нема чого)
@@ -1892,7 +1898,7 @@ function netStart() {
     br: BROKERS.map(() => ({ state: 'connecting', since: 0, fails: 0, timer: null })), kickAt: -1e9, heard: null,
     win: BROKERS.map(() => 0), winAt: 0, peerBest: [], peerBestAt: -1e9, pubN: 0,
     role: null, other: null, via: 'relay', weak: false, byeAt: 0,
-    peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, qts: -1, pingAt: 0, rtt: null, rtts: [], peerRtt: null, viaAt: 0, turn: false, iceRtt: null, statsAt: 0,
+    peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, pN: 0, rD: null, rR: null, sD: [], sR: [], qD: -1, qR: -1, slowDirect: false, peerRtt: null, viaAt: 0, turn: null, cand: '', iceRtt: null, statsAt: 0,
     iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0,
     whoTimer: null, annTimer: null, helloTimer: null, rtcTimer: null, failTimer: null, fullTimer: null
   };
@@ -2113,7 +2119,7 @@ function linkUp(N) {                     // обоє в кімнаті
   lastSeen = performance.now();
   lastK = 0; lastAimSeq = 0; syncAsked = 0;
   N.weak = false; N.byeAt = 0; N.peerBuf = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
-  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.qts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = []; N.peerRtt = null;
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rD = N.rR = null; N.sD = []; N.sR = []; N.qD = N.qR = -1; N.slowDirect = false; N.peerRtt = null;
   lobbySet({ kind: 'online', stage: 'ready' });
   if (!G) show('room');
   if (mode === 'host') netSend({ t: 'cfg', md: gmode });   // другому гравцеві одразу показуємо вибраний режим
@@ -2151,7 +2157,7 @@ function relink(N, from) {
   N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
   N.other = from; N.byeAt = 0;
   listenTo(N, from);
-  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.qts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rtt = null; N.rtts = []; N.peerRtt = null;
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rD = N.rR = null; N.sD = []; N.sR = []; N.qD = N.qR = -1; N.slowDirect = false; N.peerRtt = null;
   lastAimSeq = 0;
   lastSeen = performance.now();
   if (G && !G.demo) { G.needInit = true; G.inp[1] = null; G.pz.g = false; }
@@ -2205,22 +2211,39 @@ const FAST = { s: 1, a: 1, p: 1, q: 1 };
 const dcLive = N => !!(N.dcF && N.dcC && N.dcF.readyState === 'open' && N.dcC.readyState === 'open');
 function dcHear(N) {              // чи чуємо ми другого гравця прямим каналом
   if (!dcLive(N)) return false;
-  const limit = mode === 'guest' && !V.z && (V.phase === 'play' || V.phase === 'count') ? 350 : 1300;
+  // Поки гра йде прямим каналом, стан має приходити 40 разів на секунду: тиша в третину секунди вже означає обрив.
+  // В інших випадках прямим каналом іде лише «пульс» кілька разів на секунду, тож чекаємо довше.
+  const limit = mode === 'guest' && N.via === 'p2p' && !V.z && (V.phase === 'play' || V.phase === 'count') ? 350 : 1300;
   return performance.now() - N.dcSeen < limit;
 }
 // прямим каналом користуємось, лише коли чуємо ним самі і другий гравець не скаржився, що не чує нас
 const dcFresh = N => dcHear(N) && performance.now() - N.suspect > 1500;
+
+/* Шляхів до другого гравця два: прямий (браузер до браузера) і через сервери повідомлень.
+   Кожен шлях міряємо окремо й постійно, а гру ведемо тим, що швидший. Зазвичай це прямий;
+   але якщо «прямий» насправді йде через далекий вузол-посередник, сервери можуть виявитись швидшими. */
+const med = a => a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : null;
+const curRtt = N => N.via === 'p2p' ? (N.rD != null ? N.rD : N.rR) : (N.rR != null ? N.rR : N.rD);   // пінг шляху, яким зараз іде гра
+function pickRoute(N) {
+  if (!dcFresh(N)) return 'relay';                   // прямого шляху немає або він мовчить
+  if (N.rD == null || N.rR == null) return 'p2p';
+  if (N.slowDirect) { if (N.rD <= N.rR + 10) N.slowDirect = false; }      // повертаємось на прямий, щойно він не гірший
+  else if (N.rR + 30 < N.rD * .8) N.slowDirect = true;                    // сервери помітно швидші: переходимо на них
+  return N.slowDirect ? 'relay' : 'p2p';
+}
+function sendDirect(m) { const N = net; if (N && dcLive(N)) { try { N.dcF.send(JSON.stringify(m)); } catch (e) {} } }
+function sendRelay(m) { const N = net; if (N && linked) { N.q.push(m); flushRelay(N); } }
 
 function netSend(m) {
   const N = net;
   if (!N || !linked) return;
   const fast = FAST[m.t] === 1;
   if (!fast) m.x = ++N.tx;                           // команди нумеруємо: отримувач відкине повтор, що прийшов іншим шляхом
-  if (dcLive(N)) {
+  if (dcLive(N) && N.via === 'p2p') {
     try { (fast ? N.dcF : N.dcC).send(JSON.stringify(m)); } catch (e) {}
     if (dcFresh(N)) return;                          // прямий канал живий: цього досить
   }
-  // прямого каналу немає або він замовк (наприклад, змінилась мережа): шлемо ще й через сервери
+  // гра йде через сервери (прямого шляху немає, він замовк або повільніший)
   N.q.push(m);
   if (m.t !== 's' || N.q.length >= 2) flushRelay(N);
   else if (!N.qTimer) N.qTimer = setTimeout(() => flushRelay(N), 45);
@@ -2254,9 +2277,11 @@ function deliver(m, viaRelay) {
     if (N.rxSet.size > 512) N.rxSet = new Set([m.x]);
   }
   if (m.r === 1) N.suspect = now;                    // другий гравець каже, що прямим каналом нас не чує
-  if (m.t === 'p') {                                 // вимірювання затримки: відповідаємо одразу
-    if (!isNew) return;
-    netSend({ t: 'q', ts: m.ts });
+  if (m.t === 'p') {                                 // «пульс» і вимір пінгу
+    if (typeof m.ts !== 'number') return;
+    const q = { t: 'q', ts: m.ts };
+    if (viaRelay) sendRelay(q); else sendDirect(q);  // відповідаємо тим самим шляхом, яким прийшло: так кожен шлях міряється окремо
+    if (!isNew) return;                              // решту вже врахували з примірника, що прийшов іншим шляхом
     if (typeof m.rt === 'number' && m.rt >= 0 && m.rt < 5000) N.peerRtt = m.rt;
     if (Array.isArray(m.w)) { N.peerBest = m.w.filter(i => Number.isInteger(i) && i >= 0 && i < BROKERS.length).slice(0, 2); N.peerBestAt = now; }
     if (mode === 'host') {
@@ -2266,14 +2291,15 @@ function deliver(m, viaRelay) {
     return;
   }
   if (m.t === 'q') {
-    if (typeof m.ts !== 'number' || m.ts <= N.qts) return;       // на кожен вимір беремо лише першу відповідь (друга могла прийти довшим шляхом)
-    if (viaRelay && dcHear(N)) return;                           // пряме з'єднання працює: відповідь через сервери про нього нічого не каже
-    N.qts = m.ts;
+    if (typeof m.ts !== 'number') return;
     const rtt = now - m.ts;
-    if (rtt >= 0 && rtt < 5000) {
-      N.rtts.push(rtt);
-      if (N.rtts.length > 9) N.rtts.shift();
-      N.rtt = [...N.rtts].sort((a, b) => a - b)[N.rtts.length >> 1];   // медіана останніх вимірів: окремий стрибок не смикає гру
+    if (rtt < 0 || rtt > 5000) return;
+    if (viaRelay) {                                  // відповідь прийшла через сервери: це пінг шляху через сервери
+      if (m.ts <= N.qR) return;
+      N.qR = m.ts; N.sR.push(rtt); if (N.sR.length > 7) N.sR.shift(); N.rR = med(N.sR);
+    } else {                                         // відповідь прийшла прямим каналом: це пінг прямого шляху
+      if (m.ts <= N.qD) return;
+      N.qD = m.ts; N.sD.push(rtt); if (N.sD.length > 7) N.sD.shift(); N.rD = med(N.sD);
     }
     return;
   }
@@ -2318,7 +2344,7 @@ function onGuestData(m) {
 function closeRtc(N) {
   clearTimeout(N.rtcTimer);
   const pc = N.pc, a = N.dcF, b = N.dcC;
-  N.pc = null; N.dcF = null; N.dcC = null; N.iceQ = []; N.via = 'relay'; N.turn = false; N.iceRtt = null;
+  N.pc = null; N.dcF = null; N.dcC = null; N.iceQ = []; N.via = 'relay'; N.turn = null; N.cand = ''; N.iceRtt = null; N.rD = null; N.sD = []; N.slowDirect = false;
   try { if (a) a.close(); } catch (e) {}
   try { if (b) b.close(); } catch (e) {}
   try { if (pc) pc.close(); } catch (e) {}
@@ -2391,24 +2417,44 @@ function onRtc(N, m) {
   }
 }
 
-// яким шляхом зараз іде гра (напряму чи через сервери), потрібно лише самій грі
+// Рядок у кутку екрана: пінг обох гравців (час «туди й назад», як його виміряв кожен) і те, чи зв'язок прямий.
+// «напряму» пишемо, лише коли браузер підтвердив, що між гравцями немає вузла-посередника.
 function showVia() {
   const N = net;
-  if (N) {
-    const via = dcFresh(N) ? 'p2p' : 'relay';
-    if (via !== N.via) N.rtts = [];                  // шлях змінився: старі виміри були про інший шлях
-    N.via = via; N.viaAt = performance.now();
-  }
-  // У кутку екрана — пінг обох гравців: за скільки мілісекунд сигнал доходить до іншого й назад, як це виміряв кожен.
-  // Якщо зв'язок іде не напряму, а через сервер, так і пишемо: це пояснює великий пінг.
+  if (N) { N.via = pickRoute(N); N.viaAt = performance.now(); }
   let text = '';
-  if (linked && N && N.rtt != null && !N.weak) {
-    text = 'Пінг: ти ' + Math.round(N.rtt) + ' мс';
+  const rtt = N && linked && !N.weak ? curRtt(N) : null;
+  if (rtt != null) {
+    text = 'Пінг: ти ' + Math.round(rtt) + ' мс';
     if (N.peerRtt != null) text += ' · суперник ' + N.peerRtt + ' мс';
-    if (N.via !== 'p2p' || N.turn) text += ' · через сервер';
+    if (N.via !== 'p2p' || N.turn === true) text += ' · через сервер';
+    else if (N.turn === false) text += ' · напряму';
   }
   setText('via', text);
 }
+// Докладний стан зв'язку. На екран не виводиться: копіюється, якщо торкнутись рядка з пінгом.
+function diagText() {
+  const N = net, f = v => v == null ? '—' : Math.round(v) + ' мс';
+  if (!N) return 'Два дракони: мережа не запущена';
+  const used = N.via === 'p2p' ? (N.turn ? 'прямий канал через вузол-посередник' : N.turn === false ? 'напряму' : 'прямий канал') : 'сервери повідомлень';
+  return ['Два дракони, діагностика зв’язку',
+    'гра йде: ' + used + (N.slowDirect ? ' (прямий канал є, але повільніший)' : ''),
+    'пінг прямим каналом: ' + f(N.rD) + ' (за даними браузера: ' + f(N.iceRtt) + '), адреси: ' + (N.cand || '—'),
+    'пінг через сервери: ' + f(N.rR),
+    'сервери: ' + BROKERS.map((b, i) => b.name + ' ' + (N.clients[i] && N.clients[i]._ok ? f(N.clients[i]._lat) : N.br[i].state)).join(', '),
+    'другому гравцеві найшвидше доходить через: ' + (N.peerBest.map(i => BROKERS[i].name).join(', ') || '—'),
+    'мені найшвидше доходить через: ' + (bestBrokers(N).map(i => BROKERS[i].name).join(', ') || '—'),
+    'я ' + (N.role || '—') + ', прямий канал відкритий: ' + (dcLive(N) ? 'так' : 'ні') + ', чую ним другого: ' + (dcHear(N) ? 'так' : 'ні')
+  ].join('\n');
+}
+$('via').addEventListener('click', async () => {
+  const text = diagText();
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {}
+  hudCache.via = null;
+  $('via').textContent = ok ? 'Діагностику скопійовано' : text;
+  if (net) net.viaAt = performance.now() + (ok ? 800 : 12000);   // трохи потримати напис, перш ніж повернути пінг
+});
 
 // зв'язок з другим гравцем зник або повернувся
 function setWeak(N, v) {
@@ -2439,12 +2485,14 @@ function probeLink(N) {
     if (!pair) return;
     const a = st.get(pair.localCandidateId), b = st.get(pair.remoteCandidateId);
     N.turn = !!((a && a.candidateType === 'relay') || (b && b.candidateType === 'relay'));
+    N.cand = (a ? a.candidateType + '/' + (a.relayProtocol || a.protocol || '?') : '?') + ' - ' + (b ? b.candidateType : '?');
     if (typeof pair.currentRoundTripTime === 'number') N.iceRtt = pair.currentRoundTripTime * 1000;
   }).catch(() => {});
 }
 function pingMsg(now) {
   const m = { t: 'p', ts: Math.round(now * 10) / 10 };
-  if (net && net.rtt != null) m.rt = Math.round(net.rtt);   // мій виміряний пінг: другий гравець покаже його в себе
+  const rt = net ? curRtt(net) : null;
+  if (rt != null) m.rt = Math.round(rt);             // мій виміряний пінг: другий гравець покаже його в себе
   if (mode === 'guest') {
     m.b = Math.round(bufWant(now) * 10);               // який запас плавності нам потрібен: перший гравець візьме такий самий
     if (myAim != null) { m.a = r3(myAim); m.i = aimSeq; }
@@ -2467,7 +2515,12 @@ setInterval(() => {
     N.br.forEach((st, i) => { if (st.state === 'connecting' && now - st.since > 10000) retryBroker(N, i); });   // підключення зависло
   }
   if (!linked) return;
-  if (now - N.pingAt > 290) { N.pingAt = now; netSend(pingMsg(now)); }
+  if (now - N.pingAt > 190) {
+    N.pingAt = now; N.pN++;
+    const p = pingMsg(now), dc = dcLive(N);
+    if (dc) sendDirect(p);
+    if (!dc || N.via !== 'p2p' || !dcFresh(N) || N.pN % 6 === 0) sendRelay(p);   // через сервери — коли гра йде ними, і зрідка для виміру
+  }
   if (mode === 'host' && G && !G.demo && (paused() || G.phase === 'over') && now - lastEmit > 300) emit([]);   // гра стоїть: стан усе одно час від часу повторюємо
   const quiet = now - lastSeen;
   setWeak(N, !!N.byeAt || quiet > 2000);
@@ -2480,8 +2533,7 @@ setInterval(() => {
     N.rtcTries++;
     startRtc(N);
   }
-  const via = dcFresh(N) ? 'p2p' : 'relay';
-  if (via !== N.via || now - N.viaAt > 1500) showVia();
+  if (pickRoute(N) !== N.via || now - N.viaAt > 1000) showVia();
 }, 200);
 
 /* =====================================================================
@@ -2732,7 +2784,7 @@ if (validRoom(qRoom)) {
 setTimeout(() => { loadMqtt().catch(() => {}); }, 600);
 
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: net.rtt, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: curRtt(net), rttD: net.rD, rttR: net.rR, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn, text: diagText(), pc: net.pc ? net.pc.connectionState + '/' + net.pc.iceConnectionState + '/' + net.pc.signalingState : 'none', dc: (net.dcF ? net.dcF.readyState : '-') + '/' + (net.dcC ? net.dcC.readyState : '-'), hear: dcHear(net), suspectAgo: Math.round(performance.now() - net.suspect), tries: net.rtcTries }; } };
 })();
 </script>
 </body>

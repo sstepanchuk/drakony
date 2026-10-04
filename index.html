@@ -58,6 +58,7 @@ body{
   -webkit-tap-highlight-color:transparent;
 }
 #app{
+  position:relative;
   height:100vh;height:100dvh;
   max-width:1180px;margin:0 auto;
   display:flex;flex-direction:column;gap:8px;
@@ -157,12 +158,12 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
 
 /* джойстик для телефона: з'являється там, де торкнувся */
 .stick{
-  position:fixed;left:0;top:0;z-index:4;width:96px;height:96px;border-radius:50%;
+  position:fixed;left:0;top:0;z-index:4;width:112px;height:112px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;pointer-events:none;
-  background:rgba(246,245,251,.7);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);
+  background:rgba(246,245,251,.55);border:3px solid var(--ink);opacity:.45;
 }
-.stick.on{background:rgba(246,245,251,.45);box-shadow:none}
-.knob{width:44px;height:44px;border-radius:50%;background:var(--yellow);border:3px solid var(--ink)}
+.stick.on{opacity:.9}
+.knob{width:50px;height:50px;border-radius:50%;background:var(--yellow);border:3px solid var(--ink)}
 
 /* пауза */
 .pause{
@@ -180,6 +181,47 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
   font:500 13px/1 var(--text);color:var(--ink);
   background:none;border:2px solid var(--ink);border-radius:999px;padding:7px 12px;
 }
+.mini{display:inline-flex;align-items:center;gap:6px}
+.mini .ic{display:none;width:20px;height:20px;fill:var(--ink)}
+.mini .ic .w{fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round}
+.mini .off{display:none}
+.mini.muted .on{display:none}
+.mini.muted .off{display:block}
+.mini.ask{background:var(--yellow)}
+
+/* телефон: поле на весь екран, без рамок і бокових відступів; рахунок і кнопки лежать поверх поля */
+body.compact #app{max-width:none;padding:0;gap:0}
+body.compact .stage{position:absolute;inset:0}
+body.compact .board{border:0;border-radius:0;box-shadow:none}
+body.compact .hud{
+  position:absolute;left:0;right:0;top:0;z-index:6;pointer-events:none;gap:8px;
+  padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 14px;
+  background:linear-gradient(rgba(228,226,240,.94) 55%,rgba(228,226,240,0));
+}
+body.compact .timer{padding:4px 12px}
+body.compact .overlay{padding:calc(env(safe-area-inset-top,0px) + 64px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}
+body.compact .foot{
+  position:absolute;z-index:6;left:10px;top:calc(env(safe-area-inset-top,0px) + 62px);
+  min-height:0;pointer-events:none;
+}
+body.compact .foot-btns{flex-direction:column;align-items:flex-start;gap:8px;pointer-events:auto}
+body.compact.menu-open .foot-btns{display:none}
+.panel > *{flex-shrink:0}
+@media (max-height:520px){
+  body.compact .panel .rules,body.compact .panel .fine{display:none}
+  body.compact .panel{gap:10px;padding:18px 20px 14px}
+}
+body.compact #hint{display:none}
+body.compact #via{
+  position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 6px);
+  font-size:11px;pointer-events:none;
+}
+body.compact .mini{height:40px;min-width:40px;padding:0 9px;justify-content:center;background:rgba(246,245,251,.9)}
+body.compact .mini .ic{display:block}
+body.compact .mini .lbl{display:none}
+body.compact .mini.ask{background:var(--yellow)}
+body.compact .mini.ask .lbl{display:inline;font-weight:700}
+
 @media (max-width:420px){
   .nm{font-size:13px}
   .foot{font-size:12px}
@@ -188,7 +230,7 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
 </head>
 <body>
 <div id="app">
-  <header class="hud">
+  <header class="hud" id="hud">
     <div class="score" style="--c:var(--pink)">
       <b id="s0">0</b>
       <span class="who"><span class="nm">Жаринка</span><span class="tag" id="tag0"></span></span>
@@ -262,8 +304,8 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
   <footer class="foot">
     <span><span id="hint"></span> <span id="via"></span></span>
     <span class="foot-btns">
-      <button class="mini" id="b-snd">Звук увімкнено</button>
-      <button class="mini" id="b-quit" hidden>У меню</button>
+      <button class="mini" id="b-snd" aria-label="Звук"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path class="w on" d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/><path class="w off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span class="lbl">Звук увімкнено</span></button>
+      <button class="mini" id="b-quit" aria-label="Вийти в меню" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path class="w" d="M6 6l12 12M18 6L6 18"/></svg><span class="lbl">У меню</span></button>
     </span>
   </footer>
 </div>
@@ -291,7 +333,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 /* ---------- налаштування гри (можна міняти) ---------- */
 const ARENA = 46;                // радіус майданчика в умовних одиницях
-const VIEW_SPAN = 100;           // скільки одиниць видно вздовж довшого боку екрана
+const VIEW_SPAN = 100;           // приблизно стільки одиниць видно вздовж довшого боку екрана
 const TICK = 25;                 // мс на один крок розрахунку (40 разів на секунду)
 const SPEED = 20;                // швидкість дракона, одиниць за секунду
 const TURN = 4.4;                // наскільки різко повертає, радіан за секунду
@@ -659,17 +701,25 @@ const TILE = 80;                 // розмір плитки тла в один
 let tile = null, tileU = 0;
 let vis = { x0: 0, x1: 0, y0: 0, y1: 0 };
 
+let compact = false, insetTop = 0;    // compact: телефонний вигляд, поле на весь екран
 function resize() {
-  const w = Math.max(200, Math.floor(stage.clientWidth - 24)), h = Math.max(200, Math.floor(stage.clientHeight - 24));
+  compact = TOUCH || window.innerWidth < 700;
+  document.body.classList.toggle('compact', compact);
+  const pad = compact ? 0 : 24;       // на комп'ютері лишаємо місце під рамку з тінями
+  const w = Math.max(200, Math.floor(stage.clientWidth - pad)), h = Math.max(200, Math.floor(stage.clientHeight - pad));
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   if (w !== CW || h !== CH || dpr !== DPR) {
     CW = w; CH = h; DPR = dpr;
     cv.style.width = CW + 'px'; cv.style.height = CH + 'px';
     cv.width = Math.round(CW * DPR); cv.height = Math.round(CH * DPR);
+    stickHome = null;
   }
+  // на телефоні рахунок лежить поверх поля: мінікарту й стрілку опускаємо під нього
+  insetTop = compact ? Math.max(0, $('hud').getBoundingClientRect().bottom - cv.getBoundingClientRect().top) : 0;
   placeTouchUi();
 }
-const viewScale = (w, h) => clamp(Math.max(w, h) / VIEW_SPAN, 3.4, 12);
+// масштаб за площею екрана: і на телефоні, і на комп'ютері видно однаковий шмат майданчика
+const viewScale = (w, h) => clamp(Math.sqrt(w * h) / (VIEW_SPAN * .78), 3.4, 12);
 
 // тло без сітки: бліді хмари й розсип цяток; плитка безшовна, тож камера може летіти куди завгодно
 function makeTile(u) {
@@ -908,19 +958,20 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses) {
   ctx.save();
   ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
   // стрілка на краю екрана: де зараз інший дракон
+  const it = vy < 1 ? insetTop : 0;
   const o = poses[1 - camIdx], ox = (o.x - cam.x) * U, oy = (o.y - cam.y) * U, pad = 26;
   if (Math.abs(ox) > vw / 2 - 8 || Math.abs(oy) > vh / 2 - 8) {
     const k = Math.min((vw / 2 - pad) / Math.abs(ox || 1e-6), (vh / 2 - pad) / Math.abs(oy || 1e-6));
     const ang = Math.atan2(oy, ox);
     ctx.save();
-    ctx.translate(vx + vw / 2 + ox * k, vy + vh / 2 + oy * k); ctx.rotate(ang);
+    ctx.translate(vx + vw / 2 + ox * k, Math.max(vy + it + pad, vy + vh / 2 + oy * k)); ctx.rotate(ang);
     ctx.fillStyle = COL[1 - camIdx].main; ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-9, 11); ctx.lineTo(-3, 0); ctx.lineTo(-9, -11); ctx.closePath();
     ctx.fill(); ctx.stroke();
     ctx.restore();
   }
   // мінікарта
-  const MR = clamp(Math.min(vw, vh) * .085, 26, 40), mx = vx + vw - MR - 12, my = vy + MR + 12, ms = MR / ARENA;
+  const MR = clamp(Math.min(vw, vh) * .085, 26, 40), mx = vx + vw - MR - 12, my = vy + it + MR + (it ? 6 : 12), ms = MR / ARENA;
   ctx.fillStyle = 'rgba(246,245,251,.9)'; ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.arc(mx, my, MR, 0, TAU); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#e2ad00';
@@ -1004,6 +1055,7 @@ const PANELS = ['menu', 'room', 'over'];
 function show(name) {
   for (const p of PANELS) $('p-' + p).hidden = p !== name;
   $('overlay').hidden = !name;
+  document.body.classList.toggle('menu-open', !!name);
   if (name) releaseInput();
   else { try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} }
   placeTouchUi();
@@ -1012,6 +1064,7 @@ const CONTROLS = TOUCH
   ? 'Керування: торкнись екрана будь-де й веди пальцем туди, куди їхати.'
   : 'Керування: дракон їде туди, де курсор миші. Можна й стрілками чи W A S D.';
 $('join-controls').textContent = CONTROLS;
+if (TOUCH) $('b-local').hidden = true;   // режим «одна клавіатура на двох» на телефоні не має сенсу
 function setChrome() {
   $('tag0').textContent = mode === 'host' ? 'це ти' : mode === 'local' ? 'W A S D' : '';
   $('tag1').textContent = mode === 'guest' ? 'це ти' : mode === 'local' ? 'стрілки' : '';
@@ -1546,28 +1599,40 @@ addEventListener('keyup', e => {
 });
 addEventListener('blur', () => releaseInput());
 
-/* ----- палець: джойстик, що з'являється там, де торкнувся ----- */
+/* ----- палець: джойстик -----
+   З'являється там, де торкнувся, і стоїть на місці, поки не відпустиш палець.
+   Напрямок — від центру джойстика до пальця, навіть якщо палець виїхав далеко за коло.
+   Після відпускання джойстик лишається там, де ним користувалися востаннє. */
 const stick = $('stick'), knob = $('knob');
-const STICK_R = 44, DEAD = 9;
-let st = null;
+const STICK_R = 32;                                   // наскільки ручка відхиляється в межах кола
+const DEAD = Math.max(8, Math.min(window.innerWidth, window.innerHeight) * .02);   // дрібний рух пальця не рахується
+let st = null, stickHome = null;
 
 function stickPlace(x, y, on) {
-  stick.style.left = (x - 48) + 'px'; stick.style.top = (y - 48) + 'px';
+  stick.style.left = (x - 56) + 'px'; stick.style.top = (y - 56) + 'px';
   stick.classList.toggle('on', on);
 }
-function placeTouchUi() {        // джойстик чекає в нижньому кутку поля
+function placeTouchUi() {        // поки пальця немає, джойстик чекає внизу посередині або там, де ним востаннє водили
   const game = TOUCH && (mode === 'host' || mode === 'guest') && $('overlay').hidden;
   if (!game) { if (!st) stick.hidden = true; return; }
   if (st) return;
   const r = cv.getBoundingClientRect();
+  if (!stickHome) stickHome = r.width > r.height ? { x: r.left + 130, y: r.bottom - 96 } : { x: r.left + r.width / 2, y: r.bottom - 110 };   // лежачий телефон: під лівий великий палець
   knob.style.transform = 'translate(0px,0px)';
-  stickPlace(r.left + 66, r.bottom - 66, false);
+  stickPlace(stickHome.x, stickHome.y, false);
   stick.hidden = false;
 }
-function stickIdle() { st = null; placeTouchUi(); }
+function stickIdle() {
+  if (st) {                       // запам'ятовуємо місце, але не даємо джойстику «оселитися» вгорі чи під самим краєм
+    const r = cv.getBoundingClientRect();
+    stickHome = { x: clamp(st.bx, r.left + 70, r.right - 70), y: clamp(st.by, r.top + r.height * .45, r.bottom - 80) };
+  }
+  st = null;
+  placeTouchUi();
+}
 function releaseInput() {
   held.clear(); clearTimeout(keyTimer); keyTimer = null;
-  if (st) stickIdle();
+  if (st) { st = null; placeTouchUi(); }
 }
 addEventListener('pointerdown', e => {
   audio();
@@ -1596,14 +1661,9 @@ addEventListener('pointermove', e => {
     return;
   }
   if (!st || e.pointerId !== st.id) return;
-  let dx = e.clientX - st.bx, dy = e.clientY - st.by;
-  const d = Math.hypot(dx, dy);
-  if (d > STICK_R) {             // основа їде за пальцем, тож розвернутись можна коротким рухом
-    st.bx = e.clientX - dx / d * STICK_R; st.by = e.clientY - dy / d * STICK_R;
-    dx = e.clientX - st.bx; dy = e.clientY - st.by;
-    stickPlace(st.bx, st.by, true);
-  }
-  knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  const dx = e.clientX - st.bx, dy = e.clientY - st.by;
+  const d = Math.hypot(dx, dy), k = d > STICK_R ? STICK_R / d : 1;   // основа не рухається, ручка впирається в край кола
+  knob.style.transform = 'translate(' + dx * k + 'px,' + dy * k + 'px)';
   if (d > DEAD) command(0, Math.atan2(dy, dx));
 });
 const pointerEnd = e => {
@@ -1619,7 +1679,19 @@ $('b-host').addEventListener('click', () => {
   enterRoom();
 });
 $('b-local').addEventListener('click', startLocal);
-$('b-quit').addEventListener('click', toMenu);
+// під час раунду вихід у меню вимагає другого натискання, щоб не вилетіти з гри випадковим дотиком
+let quitAsk = null;
+$('b-quit').addEventListener('click', () => {
+  const b = $('b-quit'), live = V.s && (V.phase === 'play' || V.phase === 'count') && $('overlay').hidden;
+  if (live && !quitAsk) {
+    b.classList.add('ask'); b.querySelector('.lbl').textContent = 'Точно вийти?';
+    quitAsk = setTimeout(() => { quitAsk = null; b.classList.remove('ask'); b.querySelector('.lbl').textContent = 'У меню'; }, 2500);
+    return;
+  }
+  clearTimeout(quitAsk); quitAsk = null;
+  b.classList.remove('ask'); b.querySelector('.lbl').textContent = 'У меню';
+  toMenu();
+});
 document.querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', toMenu));
 
 $('b-go').addEventListener('click', () => {      // «Почати гру» може натиснути будь-хто з двох
@@ -1649,7 +1721,8 @@ $('link').addEventListener('focus', e => e.target.select());
 
 $('b-snd').addEventListener('click', () => {
   muted = !muted;
-  $('b-snd').textContent = muted ? 'Звук вимкнено' : 'Звук увімкнено';
+  $('b-snd').classList.toggle('muted', muted);
+  $('b-snd').querySelector('.lbl').textContent = muted ? 'Звук вимкнено' : 'Звук увімкнено';
   if (!muted) beep(660, .08);
 });
 

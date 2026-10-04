@@ -453,10 +453,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 /* ---------- налаштування гри (можна міняти) ---------- */
 const ARENA = 46;                // радіус майданчика в умовних одиницях
 const VIEW_SPAN = 100;           // приблизно стільки одиниць видно вздовж довшого боку екрана
-const TICK = 25;                 // мс на один крок розрахунку (40 разів на секунду)
+const TPS = 60;                  // кроків розрахунку за секунду. Було 40: частіші кроки — це коротше чекання, поки кермо «потрапить» у крок, і свіжіша картинка
+const TICK = 1000 / TPS;         // мс на один крок
 const SPEED = 20;                // швидкість дракона, одиниць за секунду
 const TURN = 4.4;                // наскільки різко повертає, радіан за секунду
-const K = 7;                     // кроків сліду між сусідніми ланками
+const SEG_GAP = 3.5;             // відстань між сусідніми ланками хвоста, в одиницях
 const R_SEG = 1.7, R_HEAD = 2.4; // розміри ланки й голови
 const R_FOOD = 1.5;              // розмір шматочка на підлозі
 const BLOCKS = 16;               // скільки шматочків у грі, як у наборі на двох
@@ -465,8 +466,10 @@ const SELF_HIT = true;           // чи рветься власний хвіс�
 const SLOW_MS = 200;             // після удару дракон на мить їде повільніше
 const LOOSE_MS = 400;            // стільки часу відірваний шматочок ще не можна підібрати
 
-const STEP = SPEED * TICK / 1000, TURN_STEP = TURN * TICK / 1000;
-const ROUND_TICKS = Math.round(ROUND_SECONDS * 1000 / TICK);
+const STEP = SPEED / TPS, TURN_STEP = TURN / TPS;
+const K = SEG_GAP / STEP;        // стільки точок сліду між сусідніми ланками (число може бути дробовим)
+const ticks = ms => Math.max(1, Math.round(ms / TICK));   // скільки кроків у стількох мілісекундах
+const ROUND_TICKS = ROUND_SECONDS * TPS;
 const COUNT_TICKS = Math.round(3000 / TICK), RESUME_TICKS = Math.round(2000 / TICK);
 const SLOW_TICKS = Math.round(SLOW_MS / TICK), LOOSE_TICKS = Math.round(LOOSE_MS / TICK);
 const NAMES = ['Жаринка', 'Хвилька'];
@@ -581,7 +584,14 @@ const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000
 function mkSnake(x, y, a) {
   return { x, y, a, ta: a, len: 0, trail: [[x, y]], pc: 1, slow: 0, lock: 0, np: 0 };   // pc: скільки точок сліду було за весь раунд
 }
-const segAt = (s, i) => s.trail[Math.min(i * K, s.trail.length - 1)];
+// точка сліду з дробовим номером (між двома сусідніми точками — по прямій)
+function trailPt(tr, f) {
+  const last = tr.length - 1;
+  if (f >= last) return tr[last];
+  const i = Math.floor(f), t = f - i, a = tr[i], b = tr[i + 1];
+  return t < 1e-6 ? a : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+const segAt = (s, i) => trailPt(s.trail, i * K);
 const paused = () => !!(G && (G.pz.h || G.pz.g || G.pz.n));   // h, g: хтось згорнув гру; n: зник зв'язок
 
 // Допомога режимам у розкладанні шматочків. Розклад дзеркальний відносно центру: кожному шматочку
@@ -606,7 +616,7 @@ function newGame(modeId) {
   G = {
     mode: MODES[modeId] ? modeId : MODE_IDS[0], M,
     phase: 'count', count: COUNT_TICKS, n: 0,
-    ticksLeft: M.seconds ? Math.round(M.seconds * 1000 / TICK) : 0,   // без обмеження часу лічильник іде вгору
+    ticksLeft: M.seconds ? M.seconds * TPS : 0,   // без обмеження часу лічильник іде вгору
     food: [], fdirty: true, needInit: true, iv: 0, fv: 0, frep: 0, eid: 0, evs: [], initAt: 0,
     inp: [null, null],
     pz: { h: document.visibilityState === 'hidden', g: false, n: false },
@@ -672,7 +682,7 @@ function headBounce(ev) {
     s.a = Math.atan2(vy, vx); s.ta = s.a;
     wallSlide(s);
     s.trail[0] = [s.x, s.y];
-    s.slow = SLOW_TICKS; s.lock = SLOW_TICKS + 4;
+    s.slow = SLOW_TICKS; s.lock = SLOW_TICKS + ticks(100);
   });
   ev.push(['b', 0, r2(mx), r2(my)]);
   return true;
@@ -692,7 +702,7 @@ function step(ev) {
       s.pc++;
     }
     s.np = n;
-    const max = (s.len + 1) * K + 2;
+    const max = Math.ceil((s.len + 1) * K) + 2;
     if (s.trail.length > max) s.trail.length = max;
     if (s.slow > 0) s.slow--;
   });
@@ -723,7 +733,7 @@ function step(ev) {
         const o = G.snakes[t];
         for (let j = (t === i ? 3 : 1); j <= o.len; j++) {
           if (j * K > o.trail.length - 1) break;       // ця ланка ще не «виїхала» з-під голови
-          const p = o.trail[j * K];
+          const p = trailPt(o.trail, j * K);
           if ((s.x - p[0]) ** 2 + (s.y - p[1]) ** 2 < lim) { cuts.push([i, t, j]); break; }
         }
       }
@@ -745,9 +755,9 @@ function step(ev) {
    - шматочки на підлозі мають номер версії й дублюються в кількох пакетах поспіль після кожної зміни;
    - події (з'їв, розірвав хвіст) мають номери й повторюються кілька кроків: отримувач бере лише нові.
    Повна картина (усі сліди) йде окремо надійним каналом: на старті раунду й на прохання. */
-const HIST = 6;                  // скільки останніх точок сліду в кожному пакеті
-const FREP = 4;                  // у скількох пакетах поспіль повторюємо шматочки після зміни
-const EV_TICKS = 5;              // скільки кроків повторюємо подію
+const HIST = ticks(150);          // скільки останніх точок сліду в кожному пакеті (запас на 150 мс втрат)
+const FREP = ticks(100);          // у скількох пакетах поспіль повторюємо шматочки після зміни
+const EV_TICKS = ticks(125);      // скільки кроків повторюємо подію
 const ci = v => Math.round(v * 100);
 const dec = a => { const o = []; for (let k = 0; k + 1 < a.length; k += 2) o.push([a[k] / 100, a[k + 1] / 100]); return o; };
 let ivSeq = 0, lastEmit = 0;
@@ -872,7 +882,7 @@ function startLoop() {
     while (acc >= TICK && n < 5 && loop === id && G) { acc -= TICK; n++; hostTick(); }
     if (acc > TICK * 5) acc = 0;                       // вкладка «проспала»: не наздоганяємо
     drainView(performance.now());
-  }, 8);
+  }, 4);
 }
 function stopLoop() { if (loop) { clearInterval(loop.t); loop = null; } }
 
@@ -922,7 +932,7 @@ function demoAI() {
     G.inp[i] = Math.atan2(t[1] - s.y, t[0] - s.x) + Math.sin(G.n / 37 + i * 2) * .25;
   });
   G.idle = free ? 0 : G.idle + 6;
-  if (G.idle > 12000 / TICK) startDemo();                // застрягли без шматочків: починаємо показ заново
+  if (G.idle > 12 * TPS) startDemo();                // застрягли без шматочків: починаємо показ заново
 }
 
 function resetView() {
@@ -959,11 +969,12 @@ function applyInit(i) {            // повна картина прийшла: 
   V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
 }
 
+const ADV_MAX = ticks(300);       // на скільки кроків назад пам'ятаємо, скільки точок сліду додав кожен крок
 const hpts = [];                  // тимчасовий список точок (щоб не створювати його 80 разів на секунду)
 function applyState(m, at) {
   const now = at || performance.now();
   if (!V.s || m.iv !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
-  const dn = clamp(m.n - V.n, 0, 8);                 // скільки кроків гри минуло з попереднього стану (більше одного, якщо пакет загубився)
+  const dn = clamp(m.n - V.n, 0, ADV_MAX);                 // скільки кроків гри минуло з попереднього стану (більше одного, якщо пакет загубився)
   for (let j = 0; j < m.s.length; j++) {
     const o = m.s[j], vs = V.s[j], h = o.h, L = h.length >> 1;
     let x = h[0], y = h[1];
@@ -978,8 +989,8 @@ function applyState(m, at) {
     }
     for (let q = 0; q < L && q < vs.trail.length; q++) vs.trail[q] = hpts[q];   // найновіші точки завжди точно як у того, хто рахує
     for (let q = 0; q < dn; q++) vs.adv.unshift(Math.max(0, d) / dn);   // на кожен крок гри свій запис: рух лишається рівним і після втрати
-    if (vs.adv.length > 12) vs.adv.length = 12;
-    const max = (o.l + 1) * K + 22;
+    if (vs.adv.length > ADV_MAX) vs.adv.length = ADV_MAX;
+    const max = Math.ceil((o.l + 1) * K) + ticks(550);
     if (vs.trail.length > max) vs.trail.length = max;
     vs.a = o.a; vs.len = o.l;
   }
@@ -1007,7 +1018,7 @@ function applyState(m, at) {
   const M = V.M, timed = M.seconds > 0;
   setPips($('pips'), M, m.s[0].l, m.s[1].l);
   // якщо час обмежений, секундомір іде вниз; якщо ні — вгору (скільки триває раунд)
-  const sec = timed ? Math.max(0, Math.ceil(m.tl * TICK / 1000)) : Math.floor(m.tl * TICK / 1000);
+  const sec = timed ? Math.max(0, Math.ceil(m.tl / TPS)) : Math.floor(m.tl / TPS);
   V.sec = sec;
   setText('timer', fmtTime(sec));
   const low = timed && m.p === 'play' && sec <= 10;
@@ -1021,7 +1032,7 @@ function applyState(m, at) {
   pauseBanner();
   if (V.z) { countEl.hidden = true; lastCountNum = null; }
   else if (m.p === 'count') {
-    const n = Math.max(1, Math.ceil(m.c * TICK / 1000));
+    const n = Math.max(1, Math.ceil(m.c / TPS));
     if (n !== lastCountNum) { lastCountNum = n; countEl.textContent = n; countEl.hidden = false; beep(440, .1); }
   }
   if (m.p !== lastPhase) {
@@ -1324,7 +1335,16 @@ function drawSnake(vs, idx, ps, now, aim) {
     ctx.drawImage(c._bmp || c, x * U - c._h, y * U - c._h, c._h * 2, c._h * 2);
   }
   if (!seen(ps.x, ps.y, 6)) return;
-  drawHead(ps.x * U, ps.y * U, ps.a, idx, aim == null ? null : angDiff(aim, ps.a));
+  // Голова одразу повертається туди, куди ти кермуєш, не чекаючи, поки команда пройде мережею й повернеться
+  // картинкою. Шлях дракона від цього не змінюється: це лише миттєва відповідь на рух пальця чи миші.
+  let ha = ps.a, look = null;
+  if (aim != null) {
+    look = angDiff(aim, ps.a);
+    const lead = TURN * Math.min(.13, (lagMs() * 2 + delayCur * TICK + 25) / 1000);   // стільки дракон устигне повернути, поки триває ця затримка
+    ha += clamp(look, -lead, lead);
+    look = angDiff(aim, ha);
+  }
+  drawHead(ps.x * U, ps.y * U, ha, idx, look);
 }
 
 // маленька стрілка перед головою: показує, куди ти кермуєш (для клавіш і пальця)
@@ -1377,7 +1397,7 @@ function miniMap(camIdx, MR, now, poses) {
     const vs = V.s[i], tr = vs.trail;
     g.strokeStyle = COL[i].main; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath();
-    for (let q = 0; q <= vs.len; q++) { const p = tr[Math.min(q * K, tr.length - 1)]; g.lineTo(p[0] * ms, p[1] * ms); }
+    for (let q = 0; q <= vs.len; q++) { const p = tr[Math.min(Math.round(q * K), tr.length - 1)]; g.lineTo(p[0] * ms, p[1] * ms); }
     g.stroke();
     g.fillStyle = COL[i].main; g.strokeStyle = INK; g.lineWidth = 1.5;
     g.beginPath(); g.arc(poses[i].x * ms, poses[i].y * ms, i === camIdx ? 4 : 3.2, 0, TAU); g.fill(); g.stroke();
@@ -1498,8 +1518,8 @@ function bufWant(now) {
   // запас покриває звичайний розкид; рідкісні запізнення й поодинокі втрати дракон «проїжджає» сам (див. pose),
   // тому тримати великий запас про всяк випадок більше не треба — картинка свіжіша
   let b = 1 + (V.jit * 2.5 + 4) / TICK;
-  if (now - V.lossAt < 5000) b += .4;
-  return clamp(b, 1.2, 6);
+  if (now - V.lossAt < 5000) b += 10 / TICK;
+  return clamp(b, 1.2, 150 / TICK);
 }
 let lastFrame = performance.now(), delayCur = 1;
 const cams = [{ x: 0, y: 0, on: false }, { x: 0, y: 0, on: false }];
@@ -1531,7 +1551,7 @@ function frame(now) {
   const want = mode === 'guest' ? bufWant(now) : mode === 'host' ? (net && net.peerBuf) || 2 : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
   let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delayCur);
-  back = clamp(back, V.phase === 'play' && !V.z ? -3 : 0, 8);   // до трьох кроків можемо домалювати самі
+  back = clamp(back, V.phase === 'play' && !V.z ? -75 / TICK : 0, 200 / TICK);   // до 75 мс можемо домалювати самі
   const poses = V.s.map(vs => pose(vs, back));
   V.rp = poses;
   // камера не «прибита» до голови, а м'яко їде за нею: дрібне тремтіння даних не трясе весь екран
@@ -2293,7 +2313,7 @@ function netSend(m) {
   }
   // гра йде через сервери (прямого шляху немає, він замовк або повільніший)
   N.q.push(m);
-  if (m.t !== 's' || N.q.length >= 2) flushRelay(N);
+  if (m.t !== 's' || N.q.length >= 3) flushRelay(N);   // стан через сервери йде пачками по три: частота надсилань лишається помірною
   else if (!N.qTimer) N.qTimer = setTimeout(() => flushRelay(N), 45);
 }
 function flushRelay(N) {
@@ -2333,7 +2353,7 @@ function deliver(m, viaRelay) {
     if (typeof m.rt === 'number' && m.rt >= 0 && m.rt < 5000) N.peerRtt = m.rt;
     if (Array.isArray(m.w)) { N.peerBest = m.w.filter(i => Number.isInteger(i) && i >= 0 && i < BROKERS.length).slice(0, 2); N.peerBestAt = now; }
     if (mode === 'host') {
-      if (typeof m.b === 'number' && m.b >= 10 && m.b <= 60) N.peerBuf = m.b / 10;
+      if (typeof m.b === 'number' && m.b >= 10 && m.b <= 100) N.peerBuf = m.b / 10;
       if (typeof m.a === 'number') hostAim(m);       // у «пульсі» їде й останній напрямок: якщо окремий пакет загубився, він дійде тут
     }
     return;
@@ -2604,8 +2624,8 @@ function flushAim() {
     aimQ.push({ at: aimAt, a: r3(myAim) });
   }
 }
-function sendAim() {             // кермо обох гравців проходить через однакове «сито»: напряму раз на 12 мс, через сервери раз на 30
-  const wait = (net && net.via === 'p2p' ? 12 : 30) - (performance.now() - aimSent);
+function sendAim() {             // кермо обох гравців проходить через однакове «сито»: напряму раз на 8 мс, через сервери раз на 30
+  const wait = (net && net.via === 'p2p' ? 8 : 30) - (performance.now() - aimSent);
   if (wait <= 0) flushAim();
   else if (!aimTimer) aimTimer = setTimeout(flushAim, wait);
 }
@@ -2713,7 +2733,8 @@ addEventListener('pointerdown', e => {
   knob.style.transform = 'translate(0px,0px)';
   stickPlace(st.bx, st.by, true);
 });
-addEventListener('pointermove', e => {
+// raw: подія прийшла «сирою», одразу з пристрою, не чекаючи наступного кадру (так кермо реагує на кілька мілісекунд раніше)
+function onPointerMove(e, raw) {
   if (e.pointerType === 'mouse') {
     lastMouse = { x: e.clientX, y: e.clientY };
     if (keyLock === true) { keyLock = lastMouse; return; }
@@ -2727,9 +2748,11 @@ addEventListener('pointermove', e => {
   if (!st || e.pointerId !== st.id) return;
   const dx = e.clientX - st.bx, dy = e.clientY - st.by;
   const d = Math.hypot(dx, dy), k = d > STICK_R ? STICK_R / d : 1;   // основа не рухається, ручка впирається в край кола
-  knob.style.transform = 'translate(' + dx * k + 'px,' + dy * k + 'px)';
+  if (!raw) knob.style.transform = 'translate(' + dx * k + 'px,' + dy * k + 'px)';   // ручку на екрані рухаємо раз на кадр, цього досить
   if (d > DEAD) command(0, Math.atan2(dy, dx));
-});
+}
+addEventListener('pointermove', e => onPointerMove(e, false));
+if ('onpointerrawupdate' in window) addEventListener('pointerrawupdate', e => onPointerMove(e, true));
 const pointerEnd = e => {
   if (e.pointerType === 'mouse') return;
   if (st && e.pointerId === st.id) stickIdle();
@@ -2833,7 +2856,7 @@ if (validRoom(qRoom)) {
 setTimeout(() => { loadMqtt().catch(() => {}); }, 600);
 
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: curRtt(net), rttD: net.rD, rttR: net.rR, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn, text: diagText(), pc: net.pc ? net.pc.connectionState + '/' + net.pc.iceConnectionState + '/' + net.pc.signalingState : 'none', dc: (net.dcF ? net.dcF.readyState : '-') + '/' + (net.dcC ? net.dcC.readyState : '-'), hear: dcHear(net), suspectAgo: Math.round(performance.now() - net.suspect), tries: net.rtcTries }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, cfg: { K, STEP, TICK, TPS }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: curRtt(net), rttD: net.rD, rttR: net.rR, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn, text: diagText(), pc: net.pc ? net.pc.connectionState + '/' + net.pc.iceConnectionState + '/' + net.pc.signalingState : 'none', dc: (net.dcF ? net.dcF.readyState : '-') + '/' + (net.dcC ? net.dcC.readyState : '-'), hear: dcHear(net), suspectAgo: Math.round(performance.now() - net.suspect), tries: net.rtcTries }; } };
 })();
 </script>
 </body>

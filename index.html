@@ -318,7 +318,7 @@ a.btn{display:block;text-align:center;text-decoration:none}
           <span class="pl" id="pl1"><i class="b"></i><b>Хвилька</b><em id="pl1-t"></em></span>
         </div>
         <div class="stack" id="lobby-share" hidden>
-          <p class="lead">Надішли це посилання другому гравцю: гра з’єднає вас, щойно він його відкриє.</p>
+          <p class="lead">Надішли це посилання другому гравцю. Щойно він його відкриє, можна починати.</p>
           <input class="link" id="link" readonly aria-label="Посилання на кімнату">
           <div class="row">
             <a class="btn primary" id="b-tg" target="_blank" rel="noopener">У Telegram</a>
@@ -327,14 +327,12 @@ a.btn{display:block;text-align:center;text-decoration:none}
           <button class="btn ghost" id="b-share" hidden>Надіслати інакше</button>
         </div>
         <p class="status" id="room-status" role="status"></p>
-        <p class="fine" id="room-diag" hidden></p>
         <div class="stack" id="lobby-modes" hidden>
           <h3 class="h3">Режим гри</h3>
           <div class="modes" id="mode-list" role="radiogroup" aria-label="Режим гри"></div>
         </div>
         <p class="fine" id="join-controls" hidden></p>
         <button class="btn primary" id="b-go" hidden disabled>Почати гру</button>
-        <p class="fine" id="file-note" hidden>Зараз гра відкрита як файл із комп’ютера. Посилання запрацює для інших після публікації на GitHub Pages.</p>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
 
@@ -725,7 +723,7 @@ function pack(ev) {
   if (G.fdirty) { G.fdirty = false; G.fv++; G.frep = FREP; }
   const m = {
     k: ++stateSeq, n: G.n, p: G.phase, c: G.count, tl: G.ticksLeft, iv: G.iv, fv: G.fv,
-    z: !paused() ? 0 : (G.pz.h || G.pz.g ? 1 : 2), lg: Math.round(lagMs()),
+    z: !paused() ? 0 : (G.pz.h || G.pz.g ? 1 : 2),
     s: G.snakes.map(s => {
       const tr = s.trail, L = Math.min(HIST, tr.length), h = [];
       let px = ci(tr[0][0]), py = ci(tr[0][1]);
@@ -746,18 +744,18 @@ const decFood = (a, colored) => { if (!colored) return dec(a); const o = []; for
 // У дорогу стан іде не об'єктом із назвами полів, а щільним списком чисел: так він майже вдвічі коротший.
 const PHASES = ['count', 'play', 'over'];
 function encState(m) {
-  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0) + m.md * 32, m.c, m.tl, m.iv, m.fv, m.lg];
+  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0) + m.md * 32, m.c, m.tl, m.iv, m.fv];
   for (const o of m.s) a.push([o.c, Math.round(o.a * 1000), o.l].concat(o.h));
   a.push(m.e || 0);
   if (m.f) a.push(m.f);
   return a;
 }
 function decState(a) {
-  if (!Array.isArray(a) || a.length < 11 || !Array.isArray(a[8]) || !Array.isArray(a[9])) return null;
+  if (!Array.isArray(a) || a.length < 10 || !Array.isArray(a[7]) || !Array.isArray(a[8])) return null;
   const fl = a[2], S = x => ({ c: x[0], a: x[1] / 1000, l: x[2], h: x.slice(3) });
   return {
-    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, md: fl >> 5, c: a[3], tl: a[4], iv: a[5], fv: a[6], lg: a[7],
-    s: [S(a[8]), S(a[9])], e: a[10] || null, f: a[11] || null
+    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, md: fl >> 5, c: a[3], tl: a[4], iv: a[5], fv: a[6],
+    s: [S(a[7]), S(a[8])], e: a[9] || null, f: a[10] || null
   };
 }
 
@@ -842,10 +840,10 @@ function pauseBanner() {
   const on = !!V.s && !V.demo && V.phase !== 'over' && (!!V.z || weak);
   $('pause').hidden = !on;
   if (on) $('pause-text').textContent = net && net.byeAt
-    ? 'Другий гравець закрив вкладку. Трохи чекаю: якщо він повернеться, раунд продовжиться.'
+    ? 'Другий гравець вийшов. Трохи чекаю: якщо він повернеться, раунд продовжиться.'
     : weak || V.z === 2
     ? 'Зник зв’язок з другим гравцем. Відновлюю, гра продовжиться сама.'
-    : 'Хтось згорнув гру. Продовжимо, щойно обидва гравці повернуться на сторінку.';
+    : 'Хтось згорнув гру. Продовжимо, щойно обоє повернуться.';
 }
 
 // пауза, коли хтось згорнув гру або зник зв'язок
@@ -946,7 +944,7 @@ function applyState(m, at) {
   if (m.fv !== V.fv) {
     if (m.f) { V.food = decFood(m.f, V.M.colored); V.fv = m.fv; } else V.needSync = true;
   }
-  V.phase = m.p; V.n = m.n; V.z = m.z || 0; V.lg = m.lg || 0;
+  V.phase = m.p; V.n = m.n; V.z = m.z || 0;
 
   // плавний годинник відтворення: згладжує нерівномірний прихід кроків
   const sample = m.n * TICK - now;
@@ -1560,10 +1558,9 @@ function show(name) {
   layoutInsets();
   placeTouchUi();
 }
-const CONTROLS = (TOUCH
+const CONTROLS = TOUCH
   ? 'Керування: торкнись екрана будь-де й веди пальцем туди, куди їхати.'
-  : 'Керування: дракон їде туди, де курсор миші. Можна й стрілками чи W A S D.')
-  + ' Умови рівні: затримку мережі гра робить однаковою для обох.';
+  : 'Керування: дракон їде туди, де курсор миші. Можна й стрілками чи W A S D.';
 $('join-controls').textContent = CONTROLS;
 if (TOUCH) $('b-local').hidden = true;   // режим «одна клавіатура на двох» на телефоні не має сенсу
 /* =====================================================================
@@ -1603,7 +1600,6 @@ function renderLobby() {
     $('pl' + i + '-t').textContent = local ? (i === 0 ? 'W A S D' : 'стрілки') : i === mine ? 'ти' : here ? 'суперник' : 'чекаємо…';
   }
   $('lobby-share').hidden = !waiting;
-  $('file-note').hidden = !(waiting && location.protocol === 'file:');
   $('lobby-modes').hidden = !known;                  // режим можна вибрати заздалегідь, ще поки чекаєш на другого
   $('join-controls').hidden = local || !ready;
   const go = $('b-go');
@@ -1755,8 +1751,8 @@ const MQTT_URLS = [
 const ICE = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
   { urls: 'stun:stun.cloudflare.com:3478' },
-  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
-  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+  // запасний шлях, коли напряму не пробитись: лише європейський вузол (американський додавав би до кожного пакета сотні мілісекунд)
+  { urls: 'turn:eu-0.turn.peerjs.com:3478', username: 'peerjs', credential: 'peerjsp' }
 ];
 
 const store = {
@@ -1804,8 +1800,8 @@ function loadMqtt() {
   });
   return mqttLib;
 }
-const LIB_FAIL = 'Не вдалося завантажити мережеву частину гри. Перевір інтернет і онови сторінку.';
-const NO_SIGNAL = 'Не вдається дістатися серверів, які з’єднують гравців. Перевір інтернет, гра пробує далі…';
+const LIB_FAIL = 'Не вдалося завантажити гру. Перевір інтернет і онови сторінку.';
+const NO_SIGNAL = 'Немає зв’язку. Перевір інтернет, гра пробує далі…';
 
 let net = null;          // усе про поточне підключення до кімнати
 let linked = false;      // обоє гравців у кімнаті й чують одне одного
@@ -1854,7 +1850,7 @@ function openBroker(N, i) {
       c._ok = true; c._rx = performance.now();
       st.state = 'ok'; st.fails = 0;
       if (N.other && linked) { try { c.subscribe(N.topic + '/d/' + N.other, { qos: 0 }); } catch (e) {} }
-      if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); $('room-diag').hidden = true; discover(N); }
+      if (!N.ready) { N.ready = true; clearTimeout(N.failTimer); discover(N); }
       else if (N.role === null) pub({ t: 'who' });                        // ще шукаємо: питаємо й на цьому сервері
       else if (N.role === 'host' && !linked) pub({ t: 'host' });          // чекаємо другого: оголошуємось і тут
       pubOn(N, { t: 'k', ts: performance.now() });                         // одразу міряємо, наскільки сервер швидкий
@@ -1884,7 +1880,7 @@ function rebuildBroker(N, i) {
   try { if (old) old.end(true); } catch (e) {}
   openBroker(N, i);
 }
-// рядок для екрана: що зараз із кожним сервером (допомагає зрозуміти, де саме затик)
+// що зараз із кожним сервером; на екран це не виводиться, видно лише з консолі розробника (__dragons.net.diag)
 function brokerDiag(N) {
   const now = performance.now();
   return N.br.map((st, i) => BROKERS[i].name + ': ' + (st.state === 'ok' ? 'працює' : st.state === 'wait' ? 'недоступний' : now - st.since > 3500 ? 'не відповідає' : 'з’єднуюсь')).join(', ');
@@ -1894,13 +1890,14 @@ function netStart() {
   const N = net = {
     topic: 'dva-drakony/v1/' + room, clients: [], seq: 0, last: {}, ready: false,
     br: BROKERS.map(() => ({ state: 'connecting', since: 0, fails: 0, timer: null })), kickAt: -1e9, heard: null,
+    win: BROKERS.map(() => 0), winAt: 0, peerBest: [], peerBestAt: -1e9, pubN: 0,
     role: null, other: null, via: 'relay', weak: false, byeAt: 0,
-    peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, pingAt: 0, rtt: null, rtts: [], viaAt: 0,
-    iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0, diagAt: 0,
+    peerBuf: 0, pc: null, dcF: null, dcC: null, dcSeen: 0, dcBorn: 0, suspect: -1e9, nudged: 0, tx: 0, rxSet: new Set(), pts: -1, qts: -1, pingAt: 0, rtt: null, rtts: [], peerRtt: null, viaAt: 0, turn: false, iceRtt: null, statsAt: 0,
+    iceQ: [], q: [], qTimer: null, rtcNext: 0, rtcTries: 0, kAt: 0,
     whoTimer: null, annTimer: null, helloTimer: null, rtcTimer: null, failTimer: null, fullTimer: null
   };
   BROKERS.forEach((b, i) => openBroker(N, i));
-  N.failTimer = setTimeout(() => { if (net === N && !N.ready) { lobbyNote(NO_SIGNAL); $('room-diag').textContent = brokerDiag(N); $('room-diag').hidden = false; } }, 6000);
+  N.failTimer = setTimeout(() => { if (net === N && !N.ready) lobbyNote(NO_SIGNAL); }, 6000);
 }
 
 // мережа щойно змінилась або сторінка повернулась: одразу перевіряємо сервери, не чекаючи тайм-аутів
@@ -1946,7 +1943,6 @@ function netStop() {
   for (const st of N.br) { clearTimeout(st.timer); st.timer = null; }
   closeRtc(N);
   for (const c of N.clients) { try { if (c) c.end(true); } catch (e) {} }
-  $('room-diag').hidden = true;
 }
 addEventListener('pagehide', () => {     // закриваємо вкладку: прощаємось усіма шляхами, якими встигнемо
   if (!net) return;
@@ -1961,13 +1957,29 @@ function pubOn(N, obj) {
   for (const c of N.clients) if (c && c._ok) { try { c.publish(N.topic, s, { qos: 0 }); } catch (e) {} }
 }
 const pub = obj => { if (net) pubOn(net, obj); };
-// ігрові дані шлемо не всім серверам, а двом найшвидшим: менше трафіку, запас на випадок збою лишається
+// Ігрові дані шлемо не всім серверам, а двом. Яким саме, підказує другий гравець: він бачить, через який
+// сервер пакети доходять до нього першими, і повідомляє про це. Доки підказки немає, беремо ті, що найшвидше
+// відповідають нам самим. Раз на секунду-півтори шлемо через усі, щоб другий гравець міг порівнювати далі.
 function pubData(N, obj) {
   obj.f = me; obj.q = ++N.seq;
-  const s = JSON.stringify(obj);
-  const live = N.clients.filter(c => c && c._ok).sort((a, b) => (a._lat == null ? 1e9 : a._lat) - (b._lat == null ? 1e9 : b._lat));
-  // ігрові дані йдуть в окрему «скриньку» відправника: сервер не повертає їх нам самим, і трафік удвічі менший
-  for (let i = 0; i < live.length && i < 2; i++) { try { live[i].publish(N.topic + '/d/' + me, s, { qos: 0 }); } catch (e) {} }
+  const s = JSON.stringify(obj), cl = N.clients;
+  const live = [];
+  for (let i = 0; i < cl.length; i++) if (cl[i] && cl[i]._ok) live.push(i);
+  let to = live;
+  if (++N.pubN % 24 !== 0) {
+    to = [];
+    if (performance.now() - N.peerBestAt < 6000) for (const i of N.peerBest) if (live.indexOf(i) >= 0) to.push(i);
+    live.sort((a, b) => (cl[a]._lat == null ? 1e9 : cl[a]._lat) - (cl[b]._lat == null ? 1e9 : cl[b]._lat));
+    for (const i of live) { if (to.length >= 2) break; if (to.indexOf(i) < 0) to.push(i); }
+  }
+  // дані йдуть в окрему «скриньку» відправника: сервер не повертає їх нам самим, і трафік удвічі менший
+  for (const i of to) { try { cl[i].publish(N.topic + '/d/' + me, s, { qos: 0 }); } catch (e) {} }
+}
+// через які два сервери дані другого гравця доходять до нас найшвидше
+function bestBrokers(N) {
+  const idx = [];
+  for (let i = 0; i < N.win.length; i++) if (N.win[i] > .5) idx.push(i);
+  return idx.sort((a, b) => N.win[b] - N.win[a]).slice(0, 2);
 }
 
 const TD = new TextDecoder();
@@ -2018,7 +2030,7 @@ function onRaw(N, p, c) {
     case 'full':
       if (linked || N.role === 'host' || N.role === 'out') break;
       lobbySet({ kind: 'online', stage: 'opening' });
-      lobbyNote('У цій кімнаті вже грають двоє. Перевіряю ще раз…');
+      lobbyNote('У цій кімнаті вже грають двоє.');
       clearTimeout(N.whoTimer); clearInterval(N.helloTimer); clearTimeout(N.fullTimer);
       N.fullTimer = setTimeout(() => { if (net === N && !linked) discover(N); }, 2000);
       break;
@@ -2033,10 +2045,14 @@ function onRaw(N, p, c) {
       if (N.role === 'guest' && N.other === from && !linked) linkUp(N);
       break;
     case 'moved':                        // наше місце зайняла інша вкладка цього ж гравця
-      if (from === N.other) leaveQuietly(N, 'Цю гру відкрито в іншій вкладці або на іншому пристрої.');
+      if (from === N.other) leaveQuietly(N, 'Цю гру вже відкрито в іншій вкладці.');
       break;
     case 'd':                            // ігрові дані через сервер-посередник
-      if (linked && from === N.other && Array.isArray(m.d)) for (const x of m.d) deliver(x, true);
+      if (linked && from === N.other && Array.isArray(m.d)) {
+        const ci = N.clients.indexOf(c);               // цей сервер доставив пакет першим: зараховуємо йому очко
+        if (ci >= 0) N.win[ci] = (N.win[ci] || 0) + 1;
+        for (const x of m.d) deliver(x, true);
+      }
       break;
     case 'rtc':
       if (linked && from === N.other) onRtc(N, m);
@@ -2076,7 +2092,7 @@ function becomeGuest(N, host) {
   mode = 'guest';
   setChrome();
   lobbySet({ kind: 'online', stage: 'opening' });
-  lobbyNote('Знайшов другого гравця, з’єднуюсь…');
+  lobbyNote('З’єднуюсь з другим гравцем…');
   let tries = 0;
   const hello = () => {
     if (net !== N || linked || N.role !== 'guest') { clearInterval(N.helloTimer); return; }
@@ -2097,7 +2113,7 @@ function linkUp(N) {                     // обоє в кімнаті
   lastSeen = performance.now();
   lastK = 0; lastAimSeq = 0; syncAsked = 0;
   N.weak = false; N.byeAt = 0; N.peerBuf = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
-  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = [];
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.qts = -1; N.suspect = -1e9; N.rtt = null; N.rtts = []; N.peerRtt = null;
   lobbySet({ kind: 'online', stage: 'ready' });
   if (!G) show('room');
   if (mode === 'host') netSend({ t: 'cfg', md: gmode });   // другому гравцеві одразу показуємо вибраний режим
@@ -2135,7 +2151,7 @@ function relink(N, from) {
   N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
   N.other = from; N.byeAt = 0;
   listenTo(N, from);
-  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rtt = null; N.rtts = [];
+  N.tx = 0; N.rxSet = new Set(); N.pts = -1; N.qts = -1; N.suspect = -1e9; N.rtcTries = 0; N.rtt = null; N.rtts = []; N.peerRtt = null;
   lastAimSeq = 0;
   lastSeen = performance.now();
   if (G && !G.demo) { G.needInit = true; G.inp[1] = null; G.pz.g = false; }
@@ -2178,7 +2194,7 @@ function peerGone() {
   showVia();
   show('room');
   becomeHost(N);
-  lobbyNote('Другий гравець вийшов. Посилання те саме, чекаю на повернення…');
+  lobbyNote('Другий гравець вийшов. Чекаю на повернення…');
 }
 
 /* ----- доставка ігрових повідомлень ----- */
@@ -2189,7 +2205,7 @@ const FAST = { s: 1, a: 1, p: 1, q: 1 };
 const dcLive = N => !!(N.dcF && N.dcC && N.dcF.readyState === 'open' && N.dcC.readyState === 'open');
 function dcHear(N) {              // чи чуємо ми другого гравця прямим каналом
   if (!dcLive(N)) return false;
-  const limit = mode === 'guest' && !V.z && (V.phase === 'play' || V.phase === 'count') ? 350 : 1000;
+  const limit = mode === 'guest' && !V.z && (V.phase === 'play' || V.phase === 'count') ? 350 : 1300;
   return performance.now() - N.dcSeen < limit;
 }
 // прямим каналом користуємось, лише коли чуємо ним самі і другий гравець не скаржився, що не чує нас
@@ -2241,6 +2257,8 @@ function deliver(m, viaRelay) {
   if (m.t === 'p') {                                 // вимірювання затримки: відповідаємо одразу
     if (!isNew) return;
     netSend({ t: 'q', ts: m.ts });
+    if (typeof m.rt === 'number' && m.rt >= 0 && m.rt < 5000) N.peerRtt = m.rt;
+    if (Array.isArray(m.w)) { N.peerBest = m.w.filter(i => Number.isInteger(i) && i >= 0 && i < BROKERS.length).slice(0, 2); N.peerBestAt = now; }
     if (mode === 'host') {
       if (typeof m.b === 'number' && m.b >= 10 && m.b <= 60) N.peerBuf = m.b / 10;
       if (typeof m.a === 'number') hostAim(m);       // у «пульсі» їде й останній напрямок: якщо окремий пакет загубився, він дійде тут
@@ -2248,7 +2266,9 @@ function deliver(m, viaRelay) {
     return;
   }
   if (m.t === 'q') {
-    if (typeof m.ts !== 'number') return;
+    if (typeof m.ts !== 'number' || m.ts <= N.qts) return;       // на кожен вимір беремо лише першу відповідь (друга могла прийти довшим шляхом)
+    if (viaRelay && dcHear(N)) return;                           // пряме з'єднання працює: відповідь через сервери про нього нічого не каже
+    N.qts = m.ts;
     const rtt = now - m.ts;
     if (rtt >= 0 && rtt < 5000) {
       N.rtts.push(rtt);
@@ -2298,7 +2318,7 @@ function onGuestData(m) {
 function closeRtc(N) {
   clearTimeout(N.rtcTimer);
   const pc = N.pc, a = N.dcF, b = N.dcC;
-  N.pc = null; N.dcF = null; N.dcC = null; N.iceQ = []; N.via = 'relay';
+  N.pc = null; N.dcF = null; N.dcC = null; N.iceQ = []; N.via = 'relay'; N.turn = false; N.iceRtt = null;
   try { if (a) a.close(); } catch (e) {}
   try { if (b) b.close(); } catch (e) {}
   try { if (pc) pc.close(); } catch (e) {}
@@ -2371,13 +2391,23 @@ function onRtc(N, m) {
   }
 }
 
-// у нижньому рядку видно, яким шляхом зараз іде гра
+// яким шляхом зараз іде гра (напряму чи через сервери), потрібно лише самій грі
 function showVia() {
   const N = net;
-  if (N) N.via = dcFresh(N) ? 'p2p' : 'relay';
-  if (N) N.viaAt = performance.now();
-  const lag = N && N.rtt != null ? ' Затримка ' + (V.s && !V.demo ? V.lg : Math.round(lagMs())) + ' мс, однакова для обох.' : '';
-  $('via').textContent = !linked || !N ? '' : N.weak ? 'Зв’язок: відновлюю…' : (N.via === 'p2p' ? 'Зв’язок: напряму.' : 'Зв’язок: через сервер-посередник.') + lag;
+  if (N) {
+    const via = dcFresh(N) ? 'p2p' : 'relay';
+    if (via !== N.via) N.rtts = [];                  // шлях змінився: старі виміри були про інший шлях
+    N.via = via; N.viaAt = performance.now();
+  }
+  // У кутку екрана — пінг обох гравців: за скільки мілісекунд сигнал доходить до іншого й назад, як це виміряв кожен.
+  // Якщо зв'язок іде не напряму, а через сервер, так і пишемо: це пояснює великий пінг.
+  let text = '';
+  if (linked && N && N.rtt != null && !N.weak) {
+    text = 'Пінг: ти ' + Math.round(N.rtt) + ' мс';
+    if (N.peerRtt != null) text += ' · суперник ' + N.peerRtt + ' мс';
+    if (N.via !== 'p2p' || N.turn) text += ' · через сервер';
+  }
+  setText('via', text);
 }
 
 // зв'язок з другим гравцем зник або повернувся
@@ -2396,13 +2426,31 @@ function setWeak(N, v) {
 // Тому: коротка тиша — гра на паузі й чекає; сервери перепідключаються самі; пряме з'єднання
 // будується заново. З кімнати викидає лише після справді довгої тиші.
 const LOST_MS = window.__lostMs || 60000;
+// Питаємо в браузера про пряме з'єднання: чи воно справді напряму, чи через вузол-посередник
+// (так буває, коли обидва гравці за суворими роутерами), і який у нього мережевий час «туди й назад».
+function probeLink(N) {
+  const pc = N.pc;
+  if (!pc || !pc.getStats) return;
+  pc.getStats().then(st => {
+    if (N.pc !== pc) return;
+    let pair = null;
+    st.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId) || pair; });
+    if (!pair) st.forEach(r => { if (!pair && r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    if (!pair) return;
+    const a = st.get(pair.localCandidateId), b = st.get(pair.remoteCandidateId);
+    N.turn = !!((a && a.candidateType === 'relay') || (b && b.candidateType === 'relay'));
+    if (typeof pair.currentRoundTripTime === 'number') N.iceRtt = pair.currentRoundTripTime * 1000;
+  }).catch(() => {});
+}
 function pingMsg(now) {
   const m = { t: 'p', ts: Math.round(now * 10) / 10 };
+  if (net && net.rtt != null) m.rt = Math.round(net.rtt);   // мій виміряний пінг: другий гравець покаже його в себе
   if (mode === 'guest') {
     m.b = Math.round(bufWant(now) * 10);               // який запас плавності нам потрібен: перший гравець візьме такий самий
     if (myAim != null) { m.a = r3(myAim); m.i = aimSeq; }
   }
   if (net && dcLive(net) && !dcHear(net)) m.r = 1;   // «прямим каналом я тебе не чую»: тоді обидва дублюють через сервери
+  if (net && !dcFresh(net)) { const w = bestBrokers(net); if (w.length) m.w = w; }   // через які сервери твої дані доходять до мене найшвидше
   return m;
 }
 setInterval(() => {
@@ -2410,15 +2458,16 @@ setInterval(() => {
   if (!N) return;
   const now = performance.now();
   // сервери: раз на кілька секунд шлемо собі «луну»; хто її не повертає, того перепідключаємо
+  if (linked && dcLive(N) && now - N.statsAt > 2000) { N.statsAt = now; probeLink(N); }
+  if (now - N.winAt > 2000) { N.winAt = now; for (let i = 0; i < N.win.length; i++) N.win[i] *= .5; }   // старі очки серверів поступово забуваємо
   if (now - N.kAt > 5000) {
     N.kAt = now;
     pubOn(N, { t: 'k', ts: now });
     N.clients.forEach((c, i) => { if (c && c._ok && c._echo && now - c._rx > 12000) rebuildBroker(N, i); });
     N.br.forEach((st, i) => { if (st.state === 'connecting' && now - st.since > 10000) retryBroker(N, i); });   // підключення зависло
   }
-  if (!N.ready && !$('room-diag').hidden && now - N.diagAt > 1000) { N.diagAt = now; $('room-diag').textContent = brokerDiag(N); }
   if (!linked) return;
-  if (now - N.pingAt > 380) { N.pingAt = now; netSend(pingMsg(now)); }
+  if (now - N.pingAt > 290) { N.pingAt = now; netSend(pingMsg(now)); }
   if (mode === 'host' && G && !G.demo && (paused() || G.phase === 'over') && now - lastEmit > 300) emit([]);   // гра стоїть: стан усе одно час від часу повторюємо
   const quiet = now - lastSeen;
   setWeak(N, !!N.byeAt || quiet > 2000);
@@ -2683,7 +2732,7 @@ if (validRoom(qRoom)) {
 setTimeout(() => { loadMqtt().catch(() => {}); }, 600);
 
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net) }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: net.rtt, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn }; } };
 })();
 </script>
 </body>

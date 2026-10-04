@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#e4e2f0">
+<title>Два дракони</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐉</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@500;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#e4e2f0;
+  --paper:#f6f5fb;
+  --ink:#23204a;
+  --mute:#6b6890;
+  --pink:#ff4fa3;
+  --blue:#2b6cf0;
+  --yellow:#ffd91a;
+  --display:'Unbounded','Arial Black','Segoe UI',system-ui,sans-serif;
+  --text:'Onest','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{
+  background:var(--page);
+  color:var(--ink);
+  font-family:var(--text);
+  font-size:16px;
+  line-height:1.45;
+  overflow:hidden;
+  overscroll-behavior:none;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+#app{
+  height:100vh;height:100dvh;
+  max-width:860px;margin:0 auto;
+  display:flex;flex-direction:column;gap:8px;
+  padding:max(12px,env(safe-area-inset-top)) 14px max(10px,env(safe-area-inset-bottom));
+}
+
+/* рахунок і таймер */
+.hud{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.score{display:flex;align-items:center;gap:10px;min-width:0}
+.score.right{justify-content:flex-end;text-align:right}
+.score b{
+  font-family:var(--display);font-weight:800;font-size:clamp(26px,6vw,36px);line-height:1;
+  color:var(--c);min-width:1.3em;text-align:center;font-variant-numeric:tabular-nums;
+}
+.who{display:flex;flex-direction:column;min-width:0;line-height:1.15}
+.nm{font-weight:700;font-size:15px}
+.tag{font-size:12px;color:var(--mute);min-height:14px}
+.timer{
+  font-family:var(--display);font-weight:500;font-size:clamp(18px,4.6vw,24px);
+  font-variant-numeric:tabular-nums;padding:6px 14px;
+  border:3px solid var(--ink);border-radius:999px;background:var(--paper);
+}
+.timer.low{background:var(--pink);color:#fff}
+
+/* поле */
+.stage{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+.board{
+  position:relative;line-height:0;
+  border:3px solid var(--ink);border-radius:14px;overflow:hidden;
+  background:var(--paper);
+  box-shadow:7px 7px 0 var(--pink),-7px -7px 0 var(--blue);
+}
+canvas{display:block}
+.count{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--display);font-weight:800;font-size:clamp(90px,30vw,180px);line-height:1;
+  color:var(--ink);text-shadow:5px 5px 0 var(--pink),-5px -4px 0 var(--blue);
+  pointer-events:none;
+}
+
+/* вікна поверх поля */
+.overlay{
+  position:absolute;inset:0;z-index:5;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(228,226,240,.82);
+}
+.panel{
+  width:min(400px,100%);max-height:100%;overflow:auto;touch-action:pan-y;
+  display:flex;flex-direction:column;gap:14px;
+  padding:26px 22px 20px;text-align:center;
+  background:var(--paper);border:3px solid var(--ink);border-radius:16px;
+  box-shadow:6px 6px 0 var(--ink);
+}
+.title{
+  font-family:var(--display);font-weight:800;font-size:clamp(30px,9vw,42px);line-height:1.05;
+  text-shadow:3px 3px 0 var(--pink),-3px -2px 0 var(--blue);
+  padding:4px 0 2px;
+}
+h2{font-family:var(--display);font-weight:800;font-size:clamp(20px,5.6vw,26px);line-height:1.15}
+.lead{font-size:16px}
+.rules{list-style:none;text-align:left;display:flex;flex-direction:column;gap:8px;font-size:15px}
+.rules li{display:flex;gap:10px;align-items:flex-start}
+.pc{
+  flex:none;width:16px;height:16px;margin-top:3px;border-radius:50%;
+  background:var(--yellow);border:2.5px solid var(--ink);
+}
+.pc.star{border-radius:3px;transform:rotate(45deg) scale(.92)}
+.pc.bump{background:var(--paper);border-style:dashed}
+.fine{font-size:13px;color:var(--mute)}
+.status{font-size:15px;font-weight:500;min-height:1.45em}
+.final{font-family:var(--display);font-weight:500;font-size:18px}
+.final .p{color:var(--pink);font-weight:800}
+.final .b{color:var(--blue);font-weight:800}
+.link{
+  width:100%;font:500 14px/1.2 var(--text);color:var(--ink);
+  padding:12px;border:3px solid var(--ink);border-radius:12px;background:#fff;
+  text-align:center;-webkit-user-select:all;user-select:all;
+}
+.row{display:flex;gap:10px}
+.row .btn{flex:1}
+.btn{
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  font:700 16px/1.2 var(--text);color:var(--ink);
+  padding:14px 16px;border:3px solid var(--ink);border-radius:12px;background:var(--paper);
+  box-shadow:4px 4px 0 var(--ink);
+  transition:transform .06s,box-shadow .06s;
+}
+.btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
+.btn.primary{background:var(--yellow)}
+.btn.ghost{border-color:transparent;box-shadow:none;background:none;font-weight:500;text-decoration:underline;padding:6px}
+.btn.ghost:active{transform:none;box-shadow:none}
+button:focus-visible,.link:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+
+/* низ */
+.foot{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--mute);min-height:30px}
+.foot-btns{display:flex;gap:6px;flex:none}
+.mini{
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  font:500 13px/1 var(--text);color:var(--ink);
+  background:none;border:2px solid var(--ink);border-radius:999px;padding:7px 12px;
+}
+@media (max-width:420px){
+  .nm{font-size:13px}
+  .foot{font-size:12px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="hud">
+    <div class="score" style="--c:var(--pink)">
+      <b id="s0">4</b>
+      <span class="who"><span class="nm">Жаринка</span><span class="tag" id="tag0"></span></span>
+    </div>
+    <div class="timer" id="timer">2:00</div>
+    <div class="score right" style="--c:var(--blue)">
+      <span class="who"><span class="nm">Хвилька</span><span class="tag" id="tag1"></span></span>
+      <b id="s1">4</b>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="board" id="board">
+      <canvas id="cv" aria-label="Ігрове поле"></canvas>
+      <div class="count" id="count" hidden></div>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <section class="panel" id="p-menu">
+        <h1 class="title">Два дракони</h1>
+        <p class="lead">Збирайте шматочки й ростіть. Через дві хвилини перемагає довший дракон.</p>
+        <ul class="rules">
+          <li><i class="pc"></i><span>Шматочок додає одну ланку.</span></li>
+          <li><i class="pc star"></i><span>Зірка додає одразу три.</span></li>
+          <li><i class="pc bump"></i><span>Врізався в хвіст — губиш половину довжини, і її може підібрати суперник.</span></li>
+        </ul>
+        <button class="btn primary" id="b-host">Створити кімнату для двох</button>
+        <button class="btn" id="b-local">Грати вдвох на одній клавіатурі</button>
+        <p class="fine">Краї поля наскрізні: вилетів праворуч, з’явився ліворуч.</p>
+      </section>
+
+      <section class="panel" id="p-lobby" hidden>
+        <h2>Кімната для двох</h2>
+        <p class="lead">Надішли це посилання. Гра почнеться, щойно його відкриють.</p>
+        <input class="link" id="link" readonly hidden aria-label="Посилання на кімнату">
+        <div class="row" id="link-btns" hidden>
+          <button class="btn primary" id="b-copy">Скопіювати</button>
+          <button class="btn" id="b-share" hidden>Поділитися</button>
+        </div>
+        <p class="status" id="lobby-status" role="status"></p>
+        <p class="fine" id="file-note" hidden>Зараз гра відкрита як файл із комп’ютера. Посилання запрацює для інших після публікації на GitHub Pages.</p>
+        <button class="btn ghost" data-menu>У меню</button>
+      </section>
+
+      <section class="panel" id="p-join" hidden>
+        <h2>Заходимо в кімнату</h2>
+        <p class="status" id="join-status" role="status"></p>
+        <button class="btn ghost" data-menu>У меню</button>
+      </section>
+
+      <section class="panel" id="p-over" hidden>
+        <h2 id="over-title"></h2>
+        <p class="final" id="over-score"></p>
+        <p class="lead" id="over-note"></p>
+        <button class="btn primary" id="b-again">Зіграти ще раз</button>
+        <button class="btn ghost" data-menu>У меню</button>
+      </section>
+    </div>
+  </main>
+
+  <footer class="foot">
+    <span id="hint"></span>
+    <span class="foot-btns">
+      <button class="mini" id="b-snd">Звук увімкнено</button>
+      <button class="mini" id="b-quit" hidden>У меню</button>
+    </span>
+  </footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   Два дракони — гра на двох без власного сервера.
+   Браузери з'єднуються напряму (WebRTC) через бібліотеку PeerJS.
+   Той, хто створив кімнату, рахує гру; другий надсилає лише повороти.
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+const rnd = n => Math.floor(Math.random() * n);
+const TAU = Math.PI * 2;
+
+/* ---------- налаштування гри (можна міняти) ---------- */
+const N = 20;                    // поле N×N клітинок
+const TICK = 135;                // мс на один крок дракона
+const ROUND_SECONDS = 120;       // тривалість раунду
+const FOOD_MIN = 5;              // скільки шматочків завжди лежить на полі
+const STAR_CHANCE = 0.12;        // шанс, що шматочок буде зіркою (+3)
+const GHOST = 16;                // кроків невразливості після зіткнення
+
+const ROUND_TICKS = Math.round(ROUND_SECONDS * 1000 / TICK);
+const COUNT_TICKS = Math.round(3000 / TICK);
+const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // вгору, праворуч, вниз, ліворуч
+const NAMES = ['Жаринка', 'Хвилька'];
+const INK = '#23204a';
+const COL = [
+  { main: '#ff4fa3', alt: '#ff86c0', light: '#ffd3e8' },
+  { main: '#2b6cf0', alt: '#6795f6', light: '#d3e1ff' }
+];
+const PEER_PREFIX = 'dva-drakony-';
+const PEER_URLS = [
+  'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+  'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js'
+];
+const REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- стан ---------- */
+let mode = 'menu';               // menu | local | host | guest
+let G = null;                    // справжній стан гри (лише в того, хто рахує)
+const V = { cur: null, prev: null, t: 0 };   // те, що малюємо
+let loop = null;
+let lastPhase = null, lastCountNum = null;
+
+let peer = null, conn = null, room = null;
+let pending = null, pendTimer = null, retryTimer = null, noRetry = false;
+let lastSeen = 0;
+
+/* =====================================================================
+   ЛОГІКА ГРИ
+   ===================================================================== */
+function mkSnake(body, dir) { return { body, dir, q: [], grow: 0, ghost: 0 }; }
+
+function newGame() {
+  G = {
+    phase: 'count', count: COUNT_TICKS, ticksLeft: ROUND_TICKS, food: [],
+    snakes: [
+      mkSnake([[5, 6], [4, 6], [3, 6], [2, 6]], 1),
+      mkSnake([[14, 13], [15, 13], [16, 13], [17, 13]], 3)
+    ]
+  };
+  refill();
+}
+
+function occupied(x, y, withFood) {
+  for (const s of G.snakes) for (const b of s.body) if (b[0] === x && b[1] === y) return true;
+  if (withFood) for (const f of G.food) if (f[0] === x && f[1] === y) return true;
+  return false;
+}
+
+function refill() {
+  let guard = 0;
+  while (G.food.length < FOOD_MIN && guard++ < 50) {
+    for (let i = 0; i < 300; i++) {
+      const x = rnd(N), y = rnd(N);
+      if (!occupied(x, y, true)) { G.food.push([x, y, Math.random() < STAR_CHANCE ? 1 : 0]); break; }
+    }
+  }
+}
+
+function pushDir(s, d) {
+  const last = s.q.length ? s.q[s.q.length - 1] : s.dir;
+  if (d === last || (d + 2) % 4 === last) return;
+  if (s.q.length < 2) s.q.push(d);
+}
+
+function findSpawn() {
+  for (let t = 0; t < 400; t++) {
+    const x = rnd(N), y = rnd(N), d = rnd(4);
+    let ok = true;
+    for (let k = 0; k <= 5 && ok; k++) {
+      const cx = (x + DIRS[d][0] * k + N * 8) % N, cy = (y + DIRS[d][1] * k + N * 8) % N;
+      if (occupied(cx, cy, false)) ok = false;
+    }
+    if (ok) return { cell: [x, y], dir: d };
+  }
+  return { cell: [rnd(N), rnd(N)], dir: rnd(4) };
+}
+
+function crash(i, ev) {
+  const s = G.snakes[i];
+  const len = s.body.length + s.grow;
+  const keep = Math.max(3, Math.ceil(len / 2));
+  const drop = len - keep;
+  const h = s.body[0];
+  ev.push(['c', i, h[0], h[1]]);
+  const cells = s.body.slice(1);
+  s.body = [];
+  if (drop > 0 && cells.length) {
+    const stepF = cells.length / drop;
+    for (let k = 0; k < drop; k++) {
+      const c = cells[Math.min(cells.length - 1, Math.floor(k * stepF))];
+      if (!G.food.some(f => f[0] === c[0] && f[1] === c[1])) G.food.push([c[0], c[1], 0]);
+    }
+  }
+  const sp = findSpawn();
+  s.body = [sp.cell]; s.dir = sp.dir; s.grow = keep - 1; s.ghost = GHOST; s.q = [];
+}
+
+function step(ev) {
+  // рух
+  for (const s of G.snakes) {
+    if (s.q.length) { const d = s.q.shift(); if ((d + 2) % 4 !== s.dir) s.dir = d; }
+    const h = s.body[0], v = DIRS[s.dir];
+    s.body.unshift([(h[0] + v[0] + N) % N, (h[1] + v[1] + N) % N]);
+    if (s.grow > 0) s.grow--; else s.body.pop();
+    if (s.ghost > 0) s.ghost--;
+  }
+  // їжа
+  G.snakes.forEach((s, i) => {
+    const h = s.body[0];
+    for (let k = G.food.length - 1; k >= 0; k--) {
+      const f = G.food[k];
+      if (f[0] === h[0] && f[1] === h[1]) {
+        s.grow += f[2] ? 3 : 1;
+        ev.push([f[2] ? 'E' : 'e', i, h[0], h[1]]);
+        G.food.splice(k, 1);
+      }
+    }
+  });
+  // зіткнення
+  const hit = [];
+  G.snakes.forEach((s, i) => {
+    if (s.ghost > 0) return;
+    const h = s.body[0];
+    G.snakes.forEach((o, j) => {
+      if (j !== i && o.ghost > 0) return;
+      for (let k = (j === i ? 1 : 0); k < o.body.length; k++) {
+        if (o.body[k][0] === h[0] && o.body[k][1] === h[1]) { if (!hit.includes(i)) hit.push(i); return; }
+      }
+    });
+  });
+  for (const i of hit) crash(i, ev);
+  refill();
+  if (--G.ticksLeft <= 0) { G.phase = 'over'; ev.push(['o']); }
+}
+
+function pack(ev) {
+  return {
+    p: G.phase, c: G.count, tl: G.ticksLeft,
+    s: G.snakes.map(s => ({ b: s.body.flat(), d: s.dir, g: s.ghost, l: s.body.length + s.grow })),
+    f: G.food.flat(), e: ev
+  };
+}
+
+function emit(ev) {
+  const m = pack(ev);
+  applyState(m);
+  if (conn && conn.open) { try { conn.send({ t: 's', g: m }); } catch (e) {} }
+}
+
+function hostTick() {
+  const ev = [];
+  if (G.phase === 'count') { if (--G.count <= 0) G.phase = 'play'; }
+  else if (G.phase === 'play') step(ev);
+  emit(ev);
+  if (G.phase === 'over') stopLoop();
+}
+
+function startLoop() {
+  stopLoop();
+  let last = performance.now(), acc = 0;
+  loop = setInterval(() => {
+    const now = performance.now();
+    acc += now - last; last = now;
+    let n = 0;
+    while (acc >= TICK && n < 4 && loop && G) { acc -= TICK; n++; hostTick(); }
+    if (acc > TICK * 4) acc = 0;
+  }, 20);
+}
+function stopLoop() { if (loop) { clearInterval(loop); loop = null; } }
+
+function startMatch() {
+  newGame();
+  V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
+  emit([]);
+  startLoop();
+}
+
+/* =====================================================================
+   ПРИЙОМ СТАНУ (однаково для обох гравців)
+   ===================================================================== */
+function unflat(a, k) { const o = []; for (let i = 0; i + k <= a.length; i += k) o.push(a.slice(i, i + k)); return o; }
+
+function applyState(m) {
+  const cur = {
+    phase: m.p, count: m.c, tl: m.tl,
+    snakes: m.s.map(s => ({ body: unflat(s.b, 2), dir: s.d, ghost: s.g, len: s.l })),
+    food: unflat(m.f, 3)
+  };
+  V.prev = V.cur; V.cur = cur; V.t = performance.now();
+
+  $('s0').textContent = cur.snakes[0].len;
+  $('s1').textContent = cur.snakes[1].len;
+  const sec = Math.max(0, Math.ceil(cur.tl * TICK / 1000));
+  $('timer').textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  $('timer').classList.toggle('low', cur.phase === 'play' && sec <= 10);
+
+  for (const e of (m.e || [])) fx(e);
+
+  const countEl = $('count');
+  if (cur.phase === 'count') {
+    const n = Math.max(1, Math.ceil(cur.count * TICK / 1000));
+    if (n !== lastCountNum) { lastCountNum = n; countEl.textContent = n; countEl.hidden = false; beep(440, .1); }
+  }
+  if (cur.phase !== lastPhase) {
+    if (cur.phase === 'count') show(null);
+    if (cur.phase === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); }
+    if (cur.phase === 'over') { countEl.hidden = true; lastCountNum = null; showOver(cur); }
+    lastPhase = cur.phase;
+  }
+}
+
+function fx(e) {
+  const [t, i, x, y] = e;
+  if (t === 'e') { burst(x, y, COL[i].main, 7); beep(i ? 620 : 520, .08); }
+  else if (t === 'E') { burst(x, y, '#ffd91a', 14); beep(i ? 620 : 520, .08); setTimeout(() => beep(i ? 930 : 780, .12), 70); }
+  else if (t === 'c') { burst(x, y, COL[i].main, 22); beep(170, .32, 'sawtooth', .06, .45); }
+  else if (t === 'o') { beep(520, .15); setTimeout(() => beep(390, .3), 160); }
+}
+
+function showOver(cur) {
+  const a = cur.snakes[0].len, b = cur.snakes[1].len;
+  const win = a === b ? -1 : (a > b ? 0 : 1);
+  $('over-title').textContent = win < 0 ? 'Нічия' : 'Перемогла ' + NAMES[win];
+  const sc = $('over-score');
+  sc.textContent = '';
+  const mk = (cls, txt) => { const el = document.createElement('span'); if (cls) el.className = cls; el.textContent = txt; return el; };
+  sc.append(mk('p', NAMES[0] + ' ' + a), mk('', '  :  '), mk('b', b + ' ' + NAMES[1]));
+  let note = '';
+  if (mode === 'host' || mode === 'guest') {
+    const me = mode === 'host' ? 0 : 1;
+    note = win < 0 ? 'Дракони однакової довжини. Потрібен ще один раунд.'
+         : win === me ? 'Твій дракон довший. Чиста перемога.'
+         : 'Цього разу твій дракон коротший. Реванш?';
+  } else {
+    note = win < 0 ? 'Дракони однакової довжини. Потрібен ще один раунд.' : 'Переможений вимагає реваншу.';
+  }
+  $('over-note').textContent = note;
+  show('over');
+}
+
+/* =====================================================================
+   МАЛЮВАННЯ
+   ===================================================================== */
+const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
+let S = 0, C = 0, DPR = 1, bg = null;
+
+function resize() {
+  const avail = Math.min(stage.clientWidth, stage.clientHeight) - 24;
+  const size = Math.max(180, Math.floor(avail));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  if (size === S && dpr === DPR && bg) return;
+  S = size; DPR = dpr; C = S / N;
+  cv.style.width = cv.style.height = S + 'px';
+  cv.width = cv.height = Math.round(S * DPR);
+  makeBg();
+}
+
+function makeBg() {
+  bg = document.createElement('canvas');
+  bg.width = bg.height = cv.width;
+  const g = bg.getContext('2d');
+  g.scale(DPR, DPR);
+  g.fillStyle = '#f6f5fb';
+  g.fillRect(0, 0, S, S);
+  // растрова сітка: крапки більшають до центру поля
+  g.fillStyle = '#cdcff0';
+  const mid = N / 2;
+  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) {
+    const d = Math.hypot(i - mid, j - mid) / mid;
+    const k = Math.max(0, 1 - d * 0.95);
+    const r = C * (0.05 + 0.13 * k * k);
+    g.beginPath(); g.arc(i * C, j * C, r, 0, TAU); g.fill();
+  }
+}
+
+function segPos(sn, psn, i, a) {
+  const c = sn.body[i];
+  if (!psn || !psn.body.length) return [c[0], c[1]];
+  const p = psn.body[Math.min(i, psn.body.length - 1)];
+  let dx = c[0] - p[0], dy = c[1] - p[1];
+  if (dx > N / 2) dx -= N; else if (dx < -N / 2) dx += N;
+  if (dy > N / 2) dy -= N; else if (dy < -N / 2) dy += N;
+  if (Math.abs(dx) + Math.abs(dy) > 1) return [c[0], c[1]];
+  return [c[0] - dx * (1 - a), c[1] - dy * (1 - a)];
+}
+
+function wrapDraw(p, fn) {
+  fn(p[0], p[1]);
+  if (p[0] < 0) fn(p[0] + N, p[1]); else if (p[0] > N - 1) fn(p[0] - N, p[1]);
+  if (p[1] < 0) fn(p[0], p[1] + N); else if (p[1] > N - 1) fn(p[0], p[1] - N);
+}
+
+function drawSeg(x, y, r, fill, light) {
+  const cx = (x + .5) * C, cy = (y + .5) * C;
+  ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = light;
+  ctx.beginPath(); ctx.arc(cx, cy, r * .36, 0, TAU); ctx.fill();
+}
+
+function drawHead(x, y, dir, col) {
+  const r = C * .5, lw = ctx.lineWidth;
+  ctx.save();
+  ctx.translate((x + .5) * C, (y + .5) * C);
+  ctx.rotate([-Math.PI / 2, 0, Math.PI / 2, Math.PI][dir]);
+  // роги
+  ctx.fillStyle = col.light;
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(-.15 * r, s * .6 * r);
+    ctx.lineTo(-1.2 * r, s * 1.05 * r);
+    ctx.lineTo(-.7 * r, s * .2 * r);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  // голова й морда одним силуетом
+  ctx.lineWidth = lw * 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.stroke();
+  ctx.fillStyle = col.main;
+  ctx.beginPath(); ctx.ellipse(0, 0, .95 * r, .9 * r, 0, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(.72 * r, 0, .6 * r, .56 * r, 0, 0, TAU); ctx.fill();
+  ctx.lineWidth = lw * .8;
+  // очі
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(.12 * r, s * .47 * r, .29 * r, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = INK;
+    ctx.beginPath(); ctx.arc(.22 * r, s * .47 * r, .13 * r, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(1.02 * r, s * .2 * r, .065 * r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSnake(sn, psn, idx, a, now) {
+  const n = sn.body.length;
+  if (!n) return;
+  const col = COL[idx];
+  ctx.save();
+  if (sn.ghost > 0) ctx.globalAlpha = REDUCED ? .5 : .42 + .22 * Math.sin(now / 80);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1.2, C * .075);
+  for (let i = n - 1; i >= 1; i--) {
+    const fromTail = n - 1 - i;
+    const k = fromTail === 0 ? .6 : fromTail === 1 ? .76 : fromTail === 2 ? .9 : 1;
+    const r = C * .42 * k;
+    wrapDraw(segPos(sn, psn, i, a), (x, y) => drawSeg(x, y, r, i % 2 ? col.main : col.alt, col.light));
+  }
+  wrapDraw(segPos(sn, psn, 0, a), (x, y) => drawHead(x, y, sn.dir, col));
+  ctx.restore();
+}
+
+function drawFood(f, now, scale) {
+  const x = f[0], y = f[1], star = f[2];
+  const cx = (x + .5) * C, cy = (y + .5) * C;
+  const pul = REDUCED ? 1 : 1 + .07 * Math.sin(now / 260 + x * 1.7 + y * .9);
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = Math.max(1.1, C * .065);
+  ctx.fillStyle = '#ffd91a';
+  if (star) {
+    const R = C * .46 * pul * scale, r = R * .48, rot = REDUCED ? 0 : now / 900;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = rot + i * TAU / 10, rr = i % 2 ? r : R;
+      ctx.lineTo(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else {
+    const r = C * .27 * pul * scale;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff6b8';
+    ctx.beginPath(); ctx.arc(cx, cy, r * .38, 0, TAU); ctx.fill();
+  }
+}
+
+const parts = [];
+function burst(x, y, col, n) {
+  if (REDUCED) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * TAU, v = 2 + Math.random() * 5;
+    parts.push({ x: x + .5, y: y + .5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: 320 + Math.random() * 260, col });
+  }
+}
+function drawParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    p.life += dt;
+    if (p.life >= p.max) { parts.splice(i, 1); continue; }
+    p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000;
+    const k = 1 - p.life / p.max;
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x * C, p.y * C, C * .14 * k + .5, 0, TAU); ctx.fill();
+  }
+}
+
+let lastFrame = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(60, now - lastFrame); lastFrame = now;
+  if (!bg) return;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(bg, 0, 0, S, S);
+  const cur = V.cur, prev = V.prev;
+  if (cur) {
+    const a = cur.phase === 'play' ? Math.min(1, (now - V.t) / TICK) : 1;
+    for (const f of cur.food) drawFood(f, now, 1);
+    if (prev && a < .6) {   // щойно з'їдений шматочок зникає, коли голова до нього доїжджає
+      for (const f of prev.food) {
+        if (!cur.food.some(g => g[0] === f[0] && g[1] === f[1])) drawFood(f, now, 1 - a / .6);
+      }
+    }
+    for (let i = 0; i < cur.snakes.length; i++) drawSnake(cur.snakes[i], prev && prev.snakes[i], i, a, now);
+  }
+  drawParts(dt);
+}
+
+/* =====================================================================
+   ЗВУК
+   ===================================================================== */
+let AC = null, muted = false;
+function audio() {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+  } catch (e) {}
+  return AC;
+}
+function beep(f, dur, type, vol, slide) {
+  if (muted) return;
+  const ac = audio();
+  if (!ac || ac.state !== 'running') return;
+  try {
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(f, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(f * slide, t + dur);
+    g.gain.setValueAtTime(vol || .08, t);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + dur + .02);
+  } catch (e) {}
+}
+
+/* =====================================================================
+   ІНТЕРФЕЙС
+   ===================================================================== */
+const PANELS = ['menu', 'lobby', 'join', 'over'];
+function show(name) {
+  for (const p of PANELS) $('p-' + p).hidden = p !== name;
+  $('overlay').hidden = !name;
+}
+function setChrome() {
+  $('tag0').textContent = mode === 'host' ? 'це ти' : mode === 'local' ? 'W A S D' : '';
+  $('tag1').textContent = mode === 'guest' ? 'це ти' : mode === 'local' ? 'стрілки' : '';
+  $('hint').textContent =
+    mode === 'local' ? 'Жаринка їздить на W A S D, Хвилька на стрілках.' :
+    (mode === 'host' || mode === 'guest') ? 'Стрілки або W A S D. На телефоні проведи пальцем.' : '';
+  $('b-quit').hidden = mode === 'menu';
+}
+const lobbyStatus = t => { $('lobby-status').textContent = t; };
+const joinStatus = t => { $('join-status').textContent = t; };
+
+function teardown() {
+  stopLoop();
+  clearTimeout(pendTimer); clearTimeout(retryTimer);
+  pending = null; noRetry = false;
+  const c = conn, p = peer;
+  conn = null; peer = null;
+  try { if (c) c.close(); } catch (e) {}
+  try { if (p) p.destroy(); } catch (e) {}
+  G = null; V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
+  $('count').hidden = true;
+  $('timer').classList.remove('low');
+  $('timer').textContent = '2:00';
+  $('s0').textContent = $('s1').textContent = '4';
+}
+
+function toMenu() {
+  teardown();
+  mode = 'menu';
+  setChrome();
+  show('menu');
+}
+
+function startLocal() {
+  teardown();
+  mode = 'local';
+  setChrome();
+  startMatch();
+}
+
+/* =====================================================================
+   МЕРЕЖА (PeerJS)
+   ===================================================================== */
+const store = {
+  get() { try { return localStorage.getItem('dva-drakony-room'); } catch (e) { return null; } },
+  set(v) { try { localStorage.setItem('dva-drakony-room', v); } catch (e) {} }
+};
+const validRoom = r => typeof r === 'string' && /^[a-z0-9]{4,12}$/.test(r);
+function makeCode() {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let s = ''; for (let i = 0; i < 6; i++) s += abc[rnd(abc.length)];
+  return s;
+}
+
+let peerLib = null;
+function loadPeerLib() {
+  if (window.Peer) return Promise.resolve();
+  if (peerLib) return peerLib;
+  peerLib = new Promise((res, rej) => {
+    const tryUrl = i => {
+      if (window.Peer) return res();
+      if (i >= PEER_URLS.length) { peerLib = null; return rej(new Error('peerjs')); }
+      const s = document.createElement('script');
+      s.src = PEER_URLS[i];
+      s.onload = () => (window.Peer ? res() : tryUrl(i + 1));
+      s.onerror = () => tryUrl(i + 1);
+      document.head.appendChild(s);
+    };
+    tryUrl(0);
+  });
+  return peerLib;
+}
+const LIB_FAIL = 'Не вдалося завантажити мережеву частину гри. Перевір інтернет і онови сторінку.';
+
+function watchSignal(p) {
+  p.on('disconnected', () => {
+    setTimeout(() => {
+      try { if (peer === p && !p.destroyed && p.disconnected) p.reconnect(); } catch (e) {}
+    }, 1500);
+  });
+}
+
+/* ----- той, хто створює кімнату ----- */
+async function hostStart() {
+  teardown();
+  mode = 'host';
+  setChrome();
+  $('link').hidden = true; $('link-btns').hidden = true;
+  $('file-note').hidden = true;
+  show('lobby');
+  lobbyStatus('Відкриваю кімнату…');
+  try { await loadPeerLib(); } catch (e) { if (mode === 'host') lobbyStatus(LIB_FAIL); return; }
+  if (mode !== 'host') return;
+  const saved = store.get();
+  room = validRoom(saved) ? saved : makeCode();
+  openHostPeer(0);
+}
+
+function openHostPeer(attempt) {
+  if (mode !== 'host') return;
+  let p;
+  try { p = new window.Peer(PEER_PREFIX + room); }
+  catch (e) { lobbyStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.'); return; }
+  peer = p;
+
+  p.on('open', () => {
+    if (peer !== p) return;
+    store.set(room);
+    const url = location.href.split(/[?#]/)[0] + '?room=' + room;
+    $('link').value = url;
+    $('link').hidden = false; $('link-btns').hidden = false;
+    $('b-share').hidden = !navigator.share;
+    $('file-note').hidden = location.protocol !== 'file:';
+    if (!conn) lobbyStatus('Чекаю на другого дракона…');
+  });
+
+  p.on('connection', c => {
+    if (peer !== p) return;
+    if (conn && conn.open) {     // кімната вже зайнята
+      c.on('open', () => { try { c.send({ t: 'full' }); } catch (e) {} setTimeout(() => { try { c.close(); } catch (e) {} }, 400); });
+      return;
+    }
+    const old = conn;
+    conn = c;
+    if (old) { try { old.close(); } catch (e) {} }
+    c.on('open', () => { if (conn !== c) return; lastSeen = performance.now(); startMatch(); });
+    c.on('data', m => { if (conn === c) onHostData(m); });
+    c.on('close', () => { if (conn === c) { conn = null; hostLostGuest(); } });
+    c.on('error', () => {});
+  });
+
+  watchSignal(p);
+
+  p.on('error', err => {
+    if (peer !== p) return;
+    const t = err && err.type;
+    if (t === 'unavailable-id') {
+      peer = null;
+      try { p.destroy(); } catch (e) {}
+      if (attempt < 2) {
+        lobbyStatus('Кімната ще звільняється після оновлення сторінки. Секунду…');
+        setTimeout(() => { if (mode === 'host' && !peer) openHostPeer(attempt + 1); }, 1800);
+      } else {
+        room = makeCode();
+        openHostPeer(0);
+      }
+    } else if (t === 'browser-incompatible') {
+      lobbyStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.');
+    } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
+      lobbyStatus('Немає зв’язку із сервером, який знайомить гравців. Перевір інтернет і онови сторінку.');
+    }
+  });
+}
+
+function onHostData(m) {
+  lastSeen = performance.now();
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'd') {
+    if (G && G.phase !== 'over' && Number.isInteger(m.d) && m.d >= 0 && m.d < 4) pushDir(G.snakes[1], m.d);
+  } else if (m.t === 'again') {
+    if (G && G.phase === 'over') startMatch();
+  }
+}
+
+function hostLostGuest() {
+  if (mode !== 'host') return;
+  stopLoop();
+  G = null; V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
+  $('count').hidden = true;
+  show('lobby');
+  lobbyStatus('Другий дракон відлетів. Посилання те саме, чекаю на повернення…');
+}
+
+/* ----- той, хто заходить за посиланням ----- */
+async function guestStart() {
+  teardown();
+  mode = 'guest';
+  setChrome();
+  show('join');
+  joinStatus('Шукаю кімнату…');
+  try { await loadPeerLib(); } catch (e) { if (mode === 'guest') joinStatus(LIB_FAIL); return; }
+  if (mode !== 'guest') return;
+  let p;
+  try { p = new window.Peer(); }
+  catch (e) { joinStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.'); return; }
+  peer = p;
+  p.on('open', () => { if (peer === p) guestConnect(); });
+  watchSignal(p);
+  p.on('error', err => {
+    if (peer !== p) return;
+    const t = err && err.type;
+    if (t === 'peer-unavailable') {
+      dropPending();
+      joinStatus('Кімната поки зачинена. Щойно її відкриють, гра під’єднається сама.');
+      scheduleRetry(3000);
+    } else if (t === 'browser-incompatible') {
+      joinStatus('Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.');
+    } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
+      joinStatus('Немає зв’язку із сервером, який знайомить гравців. Пробую ще…');
+      scheduleRetry(4000);
+    }
+  });
+}
+
+function dropPending() {
+  clearTimeout(pendTimer);
+  const c = pending; pending = null;
+  if (c) { try { c.close(); } catch (e) {} }
+}
+
+function scheduleRetry(ms) {
+  clearTimeout(retryTimer);
+  if (noRetry) return;
+  retryTimer = setTimeout(guestConnect, ms);
+}
+
+function guestConnect() {
+  if (mode !== 'guest' || !peer || peer.destroyed || conn) return;
+  if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} scheduleRetry(2500); return; }
+  dropPending();
+  let c;
+  try { c = peer.connect(PEER_PREFIX + room, { serialization: 'json', reliable: true }); }
+  catch (e) { scheduleRetry(3000); return; }
+  if (!c) { scheduleRetry(3000); return; }
+  pending = c;
+  pendTimer = setTimeout(() => {
+    if (pending !== c) return;
+    dropPending();
+    joinStatus('Не виходить з’єднатися напряму. Пробую ще раз…');
+    scheduleRetry(1500);
+  }, 12000);
+  c.on('open', () => {
+    if (pending !== c) return;
+    pending = null; clearTimeout(pendTimer);
+    conn = c; lastSeen = performance.now();
+    joinStatus('З’єднано. Зараз почнемо.');
+  });
+  c.on('data', m => onGuestData(c, m));
+  c.on('close', () => { if (conn === c) { conn = null; guestLost(); } });
+  c.on('error', () => {});
+}
+
+function onGuestData(c, m) {
+  if (mode !== 'guest' || !m || typeof m !== 'object') return;
+  lastSeen = performance.now();
+  if (m.t === 's' && m.g) {
+    try { applyState(m.g); } catch (e) {}
+  } else if (m.t === 'full') {
+    noRetry = true;
+    clearTimeout(retryTimer);
+    joinStatus('У цій кімнаті вже грають двоє драконів.');
+  }
+}
+
+function guestLost() {
+  if (mode !== 'guest') return;
+  V.cur = V.prev = null; lastPhase = null; lastCountNum = null;
+  $('count').hidden = true;
+  show('join');
+  if (noRetry) return;
+  joinStatus('Зв’язок перервався. Під’єднуюся знову…');
+  scheduleRetry(1500);
+}
+
+// пульс: якщо 10 секунд тиша, вважаємо, що зв'язок зник
+setInterval(() => {
+  const c = conn;
+  if (!c) return;
+  if (c.open) { try { c.send({ t: 'p' }); } catch (e) {} }
+  if (performance.now() - lastSeen > 10000) {
+    conn = null;
+    try { c.close(); } catch (e) {}
+    if (mode === 'host') hostLostGuest(); else if (mode === 'guest') guestLost();
+  }
+}, 2000);
+
+/* =====================================================================
+   КЕРУВАННЯ
+   ===================================================================== */
+function input(pl, d) {
+  if (!V.cur || V.cur.phase === 'over') return;
+  if (mode === 'guest') {
+    if (conn && conn.open) { try { conn.send({ t: 'd', d }); } catch (e) {} }
+    return;
+  }
+  if (!G) return;
+  if (mode === 'host') pl = 0;
+  pushDir(G.snakes[pl], d);
+}
+
+const KEYS = {
+  ArrowUp: [1, 0], ArrowRight: [1, 1], ArrowDown: [1, 2], ArrowLeft: [1, 3],
+  KeyW: [0, 0], KeyD: [0, 1], KeyS: [0, 2], KeyA: [0, 3]
+};
+addEventListener('keydown', e => {
+  const k = KEYS[e.code];
+  if (!k) return;
+  audio();
+  if ($('overlay').hidden) e.preventDefault();
+  if (e.repeat) return;
+  input(k[0], k[1]);
+});
+
+let sw = null;
+addEventListener('pointerdown', e => { sw = { x: e.clientX, y: e.clientY, id: e.pointerId }; audio(); });
+addEventListener('pointermove', e => {
+  if (!sw || e.pointerId !== sw.id) return;
+  const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 18) return;
+  const d = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+  sw.x = e.clientX; sw.y = e.clientY;
+  if ($('overlay').hidden) input(0, d);
+});
+addEventListener('pointerup', () => { sw = null; });
+addEventListener('pointercancel', () => { sw = null; });
+
+$('b-host').addEventListener('click', hostStart);
+$('b-local').addEventListener('click', startLocal);
+$('b-quit').addEventListener('click', toMenu);
+document.querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', toMenu));
+
+$('b-again').addEventListener('click', () => {
+  if (mode === 'guest') { if (conn && conn.open) { try { conn.send({ t: 'again' }); } catch (e) {} } }
+  else if (mode === 'local' || (mode === 'host' && conn && conn.open)) startMatch();
+});
+
+$('b-copy').addEventListener('click', async () => {
+  const el = $('link'), btn = $('b-copy');
+  let ok = false;
+  try { await navigator.clipboard.writeText(el.value); ok = true; }
+  catch (e) { try { el.focus(); el.select(); ok = document.execCommand('copy'); } catch (e2) {} }
+  btn.textContent = ok ? 'Скопійовано' : 'Виділи й скопіюй вручну';
+  setTimeout(() => { btn.textContent = 'Скопіювати'; }, 1800);
+});
+$('b-share').addEventListener('click', () => {
+  try { navigator.share({ title: 'Два дракони', text: 'Заходь, пограємо в драконів', url: $('link').value }).catch(() => {}); } catch (e) {}
+});
+$('link').addEventListener('focus', e => e.target.select());
+
+$('b-snd').addEventListener('click', () => {
+  muted = !muted;
+  $('b-snd').textContent = muted ? 'Звук вимкнено' : 'Звук увімкнено';
+  if (!muted) beep(660, .08);
+});
+
+/* =====================================================================
+   СТАРТ
+   ===================================================================== */
+addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+resize();
+requestAnimationFrame(frame);
+
+const qRoom = (new URLSearchParams(location.search).get('room') || '').toLowerCase();
+if (validRoom(qRoom)) {
+  room = qRoom;
+  if (store.get() === qRoom) hostStart();   // власник кімнати відкрив своє ж посилання
+  else guestStart();
+} else {
+  toMenu();
+}
+
+// маленьке віконце для перевірки з консолі
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; } };
+})();
+</script>
+</body>
+</html>

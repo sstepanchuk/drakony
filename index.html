@@ -224,9 +224,15 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
         <p class="fine">Свій хвіст теж рветься, якщо в’їхати в нього. Камера їде за твоїм драконом, суперника видно на мінікарті.</p>
       </section>
 
-      <section class="panel" id="p-lobby" hidden>
-        <h2 id="lobby-title">Кімната для двох</h2>
-        <p class="lead" id="lobby-lead"></p>
+      <section class="panel" id="p-room" hidden>
+        <h2>Кімната для двох</h2>
+        <p class="lead" id="room-lead"></p>
+        <ul class="rules" id="room-rules" hidden>
+          <li><i class="pc"></i><span>На підлозі 16 шматочків. Наїдь на шматочок головою, і він причепиться до хвоста.</span></li>
+          <li><i class="pc bump"></i><span>В’їхав головою в хвіст — хвіст рветься в цьому місці. Усе, що відірвалось, лишається лежати, і забрати його може будь-хто.</span></li>
+          <li><i class="pc dark"></i><span>Голова в голову — обидва роз’їжджаються вбік, ніхто нічого не губить.</span></li>
+        </ul>
+        <p class="fine" id="join-controls" hidden></p>
         <input class="link" id="link" readonly hidden aria-label="Посилання на кімнату">
         <div class="stack" id="link-btns" hidden>
           <a class="btn primary" id="b-tg" target="_blank" rel="noopener">Надіслати в Telegram</a>
@@ -235,23 +241,9 @@ button:focus-visible,a.btn:focus-visible,.link:focus-visible{outline:3px solid v
             <button class="btn" id="b-share" hidden>Інший месенджер</button>
           </div>
         </div>
-        <p class="status" id="lobby-status" role="status"></p>
-        <p class="fine" id="keep-note" hidden>Не закривай цю сторінку, поки чекаєш: кімната живе в ній.</p>
+        <p class="status" id="room-status" role="status"></p>
+        <button class="btn primary" id="b-go" hidden disabled>Почати гру</button>
         <p class="fine" id="file-note" hidden>Зараз гра відкрита як файл із комп’ютера. Посилання запрацює для інших після публікації на GitHub Pages.</p>
-        <button class="btn ghost" data-menu>У меню</button>
-      </section>
-
-      <section class="panel" id="p-join" hidden>
-        <h2>Тебе запросили зіграти</h2>
-        <p class="lead">Твій дракон синій, його звати Хвилька. Через дві хвилини перемагає той, у кого хвіст довший.</p>
-        <ul class="rules">
-          <li><i class="pc"></i><span>На підлозі 16 шматочків. Наїдь на шматочок головою, і він причепиться до хвоста.</span></li>
-          <li><i class="pc bump"></i><span>В’їхав головою в хвіст — хвіст рветься в цьому місці. Усе, що відірвалось, лишається лежати, і забрати його може будь-хто.</span></li>
-          <li><i class="pc dark"></i><span>Голова в голову — обидва роз’їжджаються вбік, ніхто нічого не губить.</span></li>
-        </ul>
-        <p class="fine" id="join-controls"></p>
-        <p class="status" id="join-status" role="status"></p>
-        <button class="btn primary" id="b-go" disabled>Почати гру</button>
         <button class="btn ghost" data-menu>У меню</button>
       </section>
 
@@ -344,6 +336,8 @@ let shake = 0;
 
 let peer = null, conn = null, room = null;
 let pending = null, pendTimer = null, retryTimer = null, noRetry = false;
+let roleTimer = null, helloTimer = null, linked = false;
+let sess = 0;                        // номер «сеансу»: відкладені дії старого сеансу не спрацюють у новому
 let lastSeen = 0;
 
 function angDiff(a, b) { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; }
@@ -1012,7 +1006,7 @@ function beep(f, dur, type, vol, slide) {
 /* =====================================================================
    ІНТЕРФЕЙС
    ===================================================================== */
-const PANELS = ['menu', 'lobby', 'join', 'over'];
+const PANELS = ['menu', 'room', 'over'];
 function show(name) {
   for (const p of PANELS) $('p-' + p).hidden = p !== name;
   $('overlay').hidden = !name;
@@ -1033,20 +1027,21 @@ function setChrome() {
   $('b-quit').hidden = mode === 'menu';
   cv.style.cursor = (mode === 'host' || mode === 'guest') && !TOUCH ? 'crosshair' : '';
 }
-const lobbyStatus = t => { $('lobby-status').textContent = t; };
-const joinStatus = t => { $('join-status').textContent = t; };
+const roomStatus = t => { $('room-status').textContent = t; };
 
-// вигляд кімнати в того, хто її створив
-function lobbyView(state) {
-  const joined = state === 'joined';
-  $('lobby-title').textContent = joined ? 'Другий дракон уже тут' : 'Кімната для двох';
-  $('lobby-lead').textContent = joined
-    ? 'Гра почнеться, щойно на тому боці натиснуть «Почати гру».'
-    : 'Надішли посилання тому, з ким граєш. Гра почнеться, коли там натиснуть «Почати гру».';
-  const ready = state !== 'opening' && !joined;
-  $('link').hidden = !ready; $('link-btns').hidden = !ready; $('keep-note').hidden = !ready;
-  $('file-note').hidden = !(ready && location.protocol === 'file:');
-  if (joined) lobbyStatus('');
+// кімната виглядає однаково для обох: спершу посилання, а коли обоє на місці — кнопка старту
+function roomView(state) {
+  const waiting = state === 'waiting', ready = state === 'ready';
+  $('room-lead').textContent =
+    ready ? (mode === 'host' ? 'Обоє на місці. Твій дракон рожевий, його звати Жаринка.' : 'Обоє на місці. Твій дракон синій, його звати Хвилька.') :
+    waiting ? 'Це посилання одне на двох. Надішли його другому гравцю або просто зачекай: гра з’єднає вас, щойно він його відкриє.' :
+    'Посилання одне на двох: хто відкрив першим, чекає тут на другого.';
+  $('link').hidden = !waiting; $('link-btns').hidden = !waiting;
+  $('room-rules').hidden = !ready; $('join-controls').hidden = !ready;   // правила показуємо перед стартом, щоб вікно лишалось компактним
+  $('file-note').hidden = !(waiting && location.protocol === 'file:');
+  $('b-go').hidden = !ready; $('b-go').disabled = !ready;
+  if (waiting) roomStatus('Чекаю на другого гравця…');
+  if (ready) roomStatus('Гру починає той, хто перший натисне кнопку.');
 }
 
 // не даємо екрану згаснути під час гри й очікування
@@ -1066,13 +1061,13 @@ document.addEventListener('visibilitychange', () => {
   if (hidden) { releaseInput(); return; }
   if (mode !== 'menu') keepAwake();
   try { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); } catch (e) {}
-  if (mode === 'guest' && !conn && !pending) scheduleRetry(300);
+  if (mode === 'guest' && peer && !conn && !pending) scheduleRetry(300);
 });
 
 function teardown() {
   stopLoop();
-  clearTimeout(pendTimer); clearTimeout(retryTimer);
-  pending = null; noRetry = false;
+  clearTimeout(pendTimer); clearTimeout(retryTimer); clearTimeout(roleTimer); clearInterval(helloTimer);
+  pending = null; noRetry = false; linked = false; sess++;
   const c = conn, p = peer;
   conn = null; peer = null;
   try { if (c) c.close(); } catch (e) {}
@@ -1082,13 +1077,13 @@ function teardown() {
   $('timer').classList.remove('low');
   setText('timer', '2:00');
   setText('s0', '0'); setText('s1', '0');
-  $('b-go').disabled = true;
   document.title = TITLE;
 }
 
 function toMenu() {
   teardown();
   mode = 'menu';
+  setAddress(false);
   setChrome();
   show('menu');
 }
@@ -1103,6 +1098,9 @@ function startLocal() {
 
 /* =====================================================================
    МЕРЕЖА (PeerJS)
+   Посилання на кімнату одне на двох. Хто відкрив його першим, той «тримає»
+   кімнату й рахує гру; другий під'єднується до нього. Ролі визначаються самі:
+   пробуємо зайняти кімнату, а якщо вона вже зайнята — заходимо як другий гравець.
    ===================================================================== */
 const store = {
   get() { try { return localStorage.getItem('dva-drakony-room'); } catch (e) { return null; } },
@@ -1113,6 +1111,10 @@ function makeCode() {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
   let s = ''; for (let i = 0; i < 6; i++) s += abc[Math.floor(Math.random() * abc.length)];
   return s;
+}
+const roomUrl = () => location.href.split(/[?#]/)[0] + '?room=' + room;
+function setAddress(withRoom) {      // адресний рядок показує те саме посилання, яким ділишся
+  try { history.replaceState(null, '', withRoom ? roomUrl() : location.href.split(/[?#]/)[0]); } catch (e) {}
 }
 
 let peerLib = null;
@@ -1135,6 +1137,9 @@ function loadPeerLib() {
 }
 const LIB_FAIL = 'Не вдалося завантажити мережеву частину гри. Перевір інтернет і онови сторінку.';
 const NO_RTC = 'Цей браузер не підтримує пряме з’єднання. Спробуй Chrome, Firefox або Safari.';
+const NO_SIGNAL = 'Немає зв’язку із сервером, який знайомить гравців. Перевір інтернет.';
+const isNetErr = t => t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed';
+const inRoom = () => mode === 'host' || mode === 'guest';
 
 function watchSignal(p) {
   p.on('disconnected', () => {
@@ -1144,55 +1149,66 @@ function watchSignal(p) {
   });
 }
 
-/* ----- той, хто створює кімнату ----- */
-async function hostStart() {
+// вхід у кімнату: однаковий для обох гравців
+async function enterRoom() {
   teardown();
   mode = 'host';
+  const my = ++sess;
   setChrome();
-  lobbyView('opening');
-  show('lobby');
-  lobbyStatus('Відкриваю кімнату…');
+  setAddress(true);
+  $('link').value = roomUrl();
+  $('b-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(roomUrl()) + '&text=' + encodeURIComponent(SHARE_TEXT);
+  $('b-share').hidden = !navigator.share;
+  roomView('opening');
+  show('room');
+  roomStatus('Заходжу в кімнату…');
   keepAwake();
-  try { await loadPeerLib(); } catch (e) { if (mode === 'host') lobbyStatus(LIB_FAIL); return; }
-  if (mode !== 'host') return;
-  const saved = store.get();
-  room = validRoom(saved) ? saved : makeCode();
-  openHostPeer(0);
+  try { await loadPeerLib(); } catch (e) { if (my === sess) roomStatus(LIB_FAIL); return; }
+  if (my !== sess) return;
+  tryHost();
 }
 
-function openHostPeer(attempt) {
-  if (mode !== 'host') return;
+function linkUp() {                  // обоє в кімнаті
+  linked = true;
+  clearInterval(helloTimer);
+  lastSeen = performance.now();
+  roomView('ready');
+  if (!G) show('room');
+  document.title = 'Обоє в кімнаті';
+  beep(660, .1); setTimeout(() => beep(880, .16), 120);
+}
+
+/* ----- пробуємо зайняти кімнату (першим гравцем) ----- */
+function tryHost() {
+  if (!inRoom()) return;
+  mode = 'host';
+  setChrome();
   let p;
   try { p = new window.Peer(PEER_PREFIX + room); }
-  catch (e) { lobbyStatus(NO_RTC); return; }
+  catch (e) { roomStatus(NO_RTC); return; }
   peer = p;
 
   p.on('open', () => {
     if (peer !== p) return;
     store.set(room);
-    const url = location.href.split(/[?#]/)[0] + '?room=' + room;
-    $('link').value = url;
-    $('b-tg').href = 'https://t.me/share/url?url=' + encodeURIComponent(url) + '&text=' + encodeURIComponent(SHARE_TEXT);
-    $('b-share').hidden = !navigator.share;
-    if (!conn) { lobbyView('waiting'); lobbyStatus('Чекаю на другого дракона…'); }
+    if (!conn) roomView('waiting');
   });
 
   p.on('connection', c => {
     if (peer !== p) return;
-    if (conn && conn.open) {     // кімната вже зайнята
-      c.on('open', () => { try { c.send({ t: 'full' }); } catch (e) {} setTimeout(() => { try { c.close(); } catch (e) {} }, 400); });
+    if (conn && conn.open) {     // у кімнаті вже двоє: третьому чесно про це кажемо
+      c.on('data', m => {
+        if (!m || m.t !== 'hello') return;
+        try { c.send({ t: 'full' }); } catch (e) {}
+        setTimeout(() => { try { c.close(); } catch (e) {} }, 600);
+      });
+      c.on('error', () => {});
       return;
     }
     const old = conn;
     conn = c;
     if (old) { try { old.close(); } catch (e) {} }
-    c.on('open', () => {
-      if (conn !== c) return;
-      lastSeen = performance.now();
-      lobbyView('joined');
-      document.title = 'Другий дракон уже тут';
-      beep(660, .1); setTimeout(() => beep(880, .16), 120);
-    });
+    c.on('open', () => { if (conn === c) lastSeen = performance.now(); });
     c.on('data', m => { if (conn === c) onHostData(m); });
     c.on('close', () => { if (conn === c) { conn = null; hostLostGuest(); } });
     c.on('error', () => {});
@@ -1203,20 +1219,16 @@ function openHostPeer(attempt) {
   p.on('error', err => {
     if (peer !== p) return;
     const t = err && err.type;
-    if (t === 'unavailable-id') {
+    if (t === 'unavailable-id') {    // кімнату вже хтось тримає: заходимо другим
       peer = null;
       try { p.destroy(); } catch (e) {}
-      if (attempt < 2) {
-        lobbyStatus('Кімната ще звільняється після оновлення сторінки. Секунду…');
-        setTimeout(() => { if (mode === 'host' && !peer) openHostPeer(attempt + 1); }, 1800);
-      } else {
-        room = makeCode();
-        openHostPeer(0);
-      }
+      if (conn) { const c = conn; conn = null; try { c.close(); } catch (e) {} stopLoop(); G = null; resetView(); show('room'); }
+      linked = false;
+      tryGuest();
     } else if (t === 'browser-incompatible') {
-      lobbyStatus(NO_RTC);
-    } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
-      lobbyStatus('Немає зв’язку із сервером, який знайомить гравців. Перевір інтернет і онови сторінку.');
+      roomStatus(NO_RTC);
+    } else if (!conn && isNetErr(t)) {
+      roomStatus(NO_SIGNAL);
     }
   });
 }
@@ -1224,7 +1236,10 @@ function openHostPeer(attempt) {
 function onHostData(m) {
   lastSeen = performance.now();
   if (!m || typeof m !== 'object') return;
-  if (m.t === 'a') {                 // напрямок другого дракона
+  if (m.t === 'hello') {             // другий гравець зайшов: вітаємось, і кімната готова
+    try { conn.send({ t: 'hi' }); } catch (e) {}
+    if (!linked) linkUp();
+  } else if (m.t === 'a') {          // напрямок другого дракона
     if (G && G.phase !== 'over' && typeof m.a === 'number' && isFinite(m.a)) G.inp[1] = m.a;
   } else if (m.t === 'pz') {         // той бік згорнув або розгорнув гру
     setPause('g', !!m.v);
@@ -1235,41 +1250,36 @@ function onHostData(m) {
 
 function hostLostGuest() {
   if (mode !== 'host') return;
+  linked = false;
   stopLoop();
   G = null;
   resetView();
   document.title = TITLE;
-  lobbyView('waiting');
-  show('lobby');
-  lobbyStatus('Другий дракон відлетів. Посилання те саме, чекаю на повернення…');
+  roomView('waiting');
+  show('room');
+  roomStatus('Другий гравець вийшов. Посилання те саме, чекаю на повернення…');
 }
 
-/* ----- той, хто заходить за посиланням ----- */
-async function guestStart() {
-  teardown();
+/* ----- кімната зайнята: заходимо другим гравцем ----- */
+function tryGuest() {
+  if (!inRoom()) return;
   mode = 'guest';
   setChrome();
-  show('join');
-  joinStatus('Шукаю кімнату…');
-  try { await loadPeerLib(); } catch (e) { if (mode === 'guest') joinStatus(LIB_FAIL); return; }
-  if (mode !== 'guest') return;
   let p;
   try { p = new window.Peer(); }
-  catch (e) { joinStatus(NO_RTC); return; }
+  catch (e) { roomStatus(NO_RTC); return; }
   peer = p;
   p.on('open', () => { if (peer === p) guestConnect(); });
   watchSignal(p);
   p.on('error', err => {
     if (peer !== p) return;
     const t = err && err.type;
-    if (t === 'peer-unavailable') {
-      dropPending();
-      joinStatus('Той, хто тебе запросив, ще не відкрив гру. Щойно відкриє, усе під’єднається саме.');
-      scheduleRetry(3000);
+    if (t === 'peer-unavailable') {  // насправді там нікого немає: займаємо кімнату самі
+      takeRoom(700);
     } else if (t === 'browser-incompatible') {
-      joinStatus(NO_RTC);
-    } else if (!conn && (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')) {
-      joinStatus('Немає зв’язку із сервером, який знайомить гравців. Пробую ще…');
+      roomStatus(NO_RTC);
+    } else if (!conn && isNetErr(t)) {
+      roomStatus(NO_SIGNAL);
       scheduleRetry(4000);
     }
   });
@@ -1287,6 +1297,20 @@ function scheduleRetry(ms) {
   retryTimer = setTimeout(guestConnect, ms);
 }
 
+// перестаємо бути другим гравцем і пробуємо зайняти кімнату
+function takeRoom(ms) {
+  dropPending();
+  clearTimeout(retryTimer); clearTimeout(roleTimer); clearInterval(helloTimer);
+  linked = false;
+  const p = peer, c = conn;
+  peer = null; conn = null;
+  try { if (c) c.close(); } catch (e) {}
+  try { if (p) p.destroy(); } catch (e) {}
+  if (noRetry || !inRoom()) return;
+  const my = sess;
+  roleTimer = setTimeout(() => { if (my === sess && inRoom() && !peer) tryHost(); }, ms);
+}
+
 function guestConnect() {
   if (mode !== 'guest' || !peer || peer.destroyed || conn) return;
   if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} scheduleRetry(2500); return; }
@@ -1298,16 +1322,17 @@ function guestConnect() {
   pending = c;
   pendTimer = setTimeout(() => {
     if (pending !== c) return;
-    dropPending();
-    joinStatus('Не виходить з’єднатися напряму. Пробую ще раз…');
-    scheduleRetry(1500);
+    roomStatus('Не виходить з’єднатися напряму. Пробую ще раз…');
+    takeRoom(800);
   }, 12000);
   c.on('open', () => {
     if (pending !== c) return;
     pending = null; clearTimeout(pendTimer);
     conn = c; lastSeen = performance.now();
-    joinStatus('Ви обоє в кімнаті. Тисни, коли будеш напоготові.');
-    $('b-go').disabled = false;
+    // вітаємось із тим, хто тримає кімнату; він відповість «hi» або скаже, що місць немає
+    const hello = () => { if (conn === c && c.open && !linked) { try { c.send({ t: 'hello' }); } catch (e) {} } };
+    clearInterval(helloTimer);
+    hello(); helloTimer = setInterval(hello, 1500);
   });
   c.on('data', m => onGuestData(c, m));
   c.on('close', () => { if (conn === c) { conn = null; guestLost(); } });
@@ -1317,23 +1342,29 @@ function guestConnect() {
 function onGuestData(c, m) {
   if (mode !== 'guest' || !m || typeof m !== 'object') return;
   lastSeen = performance.now();
-  if (m.t === 's' && m.g) {
+  if (m.t === 'hi') {
+    if (!linked) linkUp();
+  } else if (m.t === 's' && m.g) {
     try { applyState(m.g); } catch (e) {}
   } else if (m.t === 'full') {
+    clearInterval(helloTimer);
     noRetry = true;
     clearTimeout(retryTimer);
-    joinStatus('У цій кімнаті вже грають двоє драконів.');
+    roomView('opening');
+    roomStatus('У цій кімнаті вже грають двоє.');
   }
 }
 
-function guestLost() {
+function guestLost() {               // перший гравець зник: кімната тепер наша
   if (mode !== 'guest') return;
+  linked = false; clearInterval(helloTimer);
   resetView();
-  $('b-go').disabled = true;
-  show('join');
+  document.title = TITLE;
+  roomView('opening');
+  show('room');
   if (noRetry) return;
-  joinStatus('Зв’язок перервався. Під’єднуюся знову…');
-  scheduleRetry(1500);
+  roomStatus('Другий гравець вийшов. Залишаюсь у кімнаті…');
+  takeRoom(900);
 }
 
 // пульс: якщо довго тиша, вважаємо, що зв'язок зник (на паузі чекаємо довше)
@@ -1490,15 +1521,20 @@ const pointerEnd = e => {
 addEventListener('pointerup', pointerEnd);
 addEventListener('pointercancel', pointerEnd);
 /* ----- кнопки ----- */
-$('b-host').addEventListener('click', hostStart);
+$('b-host').addEventListener('click', () => {
+  const saved = store.get();
+  room = validRoom(saved) ? saved : makeCode();
+  enterRoom();
+});
 $('b-local').addEventListener('click', startLocal);
 $('b-quit').addEventListener('click', toMenu);
 document.querySelectorAll('[data-menu]').forEach(b => b.addEventListener('click', toMenu));
 
-$('b-go').addEventListener('click', () => {
-  if (mode !== 'guest' || !conn || !conn.open) return;
+$('b-go').addEventListener('click', () => {      // «Почати гру» може натиснути будь-хто з двох
+  if (!conn || !conn.open || !linked) return;
   keepAwake();
-  try { conn.send({ t: 'again' }); } catch (e) {}
+  if (mode === 'host') startMatch();
+  else if (mode === 'guest') { try { conn.send({ t: 'again' }); } catch (e) {} }
 });
 
 $('b-again').addEventListener('click', () => {
@@ -1536,8 +1572,7 @@ requestAnimationFrame(frame);
 const qRoom = (new URLSearchParams(location.search).get('room') || '').toLowerCase();
 if (validRoom(qRoom)) {
   room = qRoom;
-  if (store.get() === qRoom) hostStart();   // власник кімнати відкрив своє ж посилання
-  else guestStart();
+  enterRoom();
 } else {
   toMenu();
 }

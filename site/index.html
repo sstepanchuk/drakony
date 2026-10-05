@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e4e2f0">
+<meta name="robots" content="noindex">
+<title>Ігротека</title>
+<meta name="description" content="Наша маленька бібліотека ігор. Вхід за паролем.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ігротека">
+<meta property="og:locale" content="uk_UA">
+<meta property="og:title" content="Ігротека">
+<meta property="og:description" content="Наша маленька бібліотека ігор. Вхід за паролем.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="lib/style.css">
+<script>
+  // старі посилання на кімнату «Двох драконів» вели сюди: відправляємо їх до гри
+  if (/[?&]room=/.test(location.search)) location.replace('dragons/' + location.search);
+</script>
+</head>
+<body>
+<main class="card" id="lock">
+  <div class="lock-icon" aria-hidden="true">🔒</div>
+  <h1 class="title">Ігротека</h1>
+  <p class="lead">Наша маленька бібліотека ігор. Введи свій пароль.</p>
+  <form id="unlock" hidden>
+    <input type="text" name="username" value="Ігротека" autocomplete="username" hidden>
+    <input type="password" id="pw" autocomplete="current-password" placeholder="Пароль" aria-label="Пароль" required>
+    <button class="btn" type="submit">Відкрити</button>
+    <p class="err" id="err" role="alert"></p>
+  </form>
+  <p class="busy" id="busy">Відмикаю…</p>
+  <noscript><p class="err">Без JavaScript бібліотека не відкриється.</p></noscript>
+</main>
+
+<section class="shelf" id="shelf" hidden>
+  <div class="shelf-head">
+    <h1 class="title">Ігротека</h1>
+    <button class="btn ghost" id="sign-out" title="Пристрій забуде твій ключ">Вийти</button>
+  </div>
+  <div class="games" id="games"></div>
+</section>
+
+<script type="module">
+  import { bootLibrary } from './lib/lock.js';
+  bootLibrary();
+</script>
+</body>
+</html>

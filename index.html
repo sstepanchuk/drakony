@@ -581,17 +581,59 @@ const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000
    ЛОГІКА ГРИ
    ===================================================================== */
 // len — скільки шматочків у хвості; голова сама по собі, як в іграшці
+/* Слід дракона — кільцевий буфер.
+   Голова щокроку додає точку, а найстаріша стає непотрібною. У звичайному списку для цього доводиться
+   зсувати всі елементи (робота росте з довжиною сліду) і створювати новий об'єкт на кожну точку.
+   У кільці нова точка лягає в наступну комірку, а «початок» зсувається на одиницю: стала кількість
+   дій на крок і жодного нового об'єкта. Точка 0 — найновіша (голова), далі дедалі старіші. */
+const TRAIL_CAP = 1 << Math.ceil(Math.log2((BLOCKS + 2) * K + ticks(700)));
+class Trail {
+  constructor() { this.xs = new Float64Array(TRAIL_CAP); this.ys = new Float64Array(TRAIL_CAP); this.head = 0; this.length = 0; }
+  push(x, y) {
+    const h = this.head = (this.head + 1) & (TRAIL_CAP - 1);
+    this.xs[h] = x; this.ys[h] = y;
+    if (this.length < TRAIL_CAP) this.length++;
+    return this;
+  }
+  x(i) { return this.xs[(this.head - i) & (TRAIL_CAP - 1)]; }
+  y(i) { return this.ys[(this.head - i) & (TRAIL_CAP - 1)]; }
+  set(i, x, y) { const k = (this.head - i) & (TRAIL_CAP - 1); this.xs[k] = x; this.ys[k] = y; }
+  trim(n) { if (this.length > n) this.length = n; }
+  // точка з дробовим номером (між двома сусідніми — по прямій); за кінцем сліду віддає найстарішу. Пише в out.
+  at(f, out) {
+    const last = this.length - 1;
+    if (f >= last) { out[0] = this.x(last); out[1] = this.y(last); return out; }
+    const i = Math.floor(f), t = f - i, a = (this.head - i) & (TRAIL_CAP - 1), b = (this.head - i - 1) & (TRAIL_CAP - 1);
+    out[0] = this.xs[a] + (this.xs[b] - this.xs[a]) * t; out[1] = this.ys[a] + (this.ys[b] - this.ys[a]) * t;
+    return out;
+  }
+  slice(a, b) {                  // звичайним списком пар; потрібне лише для перевірок
+    const o = [];
+    for (let i = a || 0, n = Math.min(b == null ? this.length : b, this.length); i < n; i++) o.push([this.x(i), this.y(i)]);
+    return o;
+  }
+}
+// Черга: додаємо в кінець, забираємо з початку, і те, й інше за сталий час (у звичайного списку shift зсуває всі елементи).
+class Queue {
+  constructor() { this.a = []; this.h = 0; }
+  get length() { return this.a.length - this.h; }
+  push(v) { this.a.push(v); }
+  peek() { return this.a[this.h]; }
+  shift() {
+    const v = this.a[this.h]; this.a[this.h++] = undefined;
+    if (this.h === this.a.length) { this.a.length = 0; this.h = 0; }   // спорожніла: починаємо з чистого аркуша
+    return v;
+  }
+  clear() { this.a.length = 0; this.h = 0; }
+}
+// вилучення з невпорядкованого списку: на місце вилученого стає останній (не зсуваємо решту)
+function dropAt(list, i) { const last = list.pop(); if (i < list.length) list[i] = last; }
+
 function mkSnake(x, y, a) {
-  return { x, y, a, ta: a, len: 0, trail: [[x, y]], pc: 1, slow: 0, lock: 0, np: 0 };   // pc: скільки точок сліду було за весь раунд
+  return { x, y, a, ta: a, len: 0, trail: new Trail().push(x, y), pc: 1, slow: 0, lock: 0, np: 0 };   // pc: скільки точок сліду було за весь раунд
 }
-// точка сліду з дробовим номером (між двома сусідніми точками — по прямій)
-function trailPt(tr, f) {
-  const last = tr.length - 1;
-  if (f >= last) return tr[last];
-  const i = Math.floor(f), t = f - i, a = tr[i], b = tr[i + 1];
-  return t < 1e-6 ? a : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-}
-const segAt = (s, i) => trailPt(s.trail, i * K);
+const SP = [0, 0];               // сюди segAt кладе результат (дійсний до наступного виклику)
+const segAt = (s, i) => s.trail.at(i * K, SP);
 const paused = () => !!(G && (G.pz.h || G.pz.g || G.pz.n));   // h, g: хтось згорнув гру; n: зник зв'язок
 
 // Допомога режимам у розкладанні шматочків. Розклад дзеркальний відносно центру: кожному шматочку
@@ -617,13 +659,13 @@ function newGame(modeId) {
     mode: MODES[modeId] ? modeId : MODE_IDS[0], M,
     phase: 'count', count: COUNT_TICKS, n: 0,
     ticksLeft: M.seconds ? M.seconds * TPS : 0,   // без обмеження часу лічильник іде вгору
-    food: [], fdirty: true, needInit: true, iv: 0, fv: 0, frep: 0, eid: 0, evs: [], initAt: 0,
+    food: [], pid: 0, fdirty: true, needInit: true, iv: 0, fv: 0, frep: 0, eid: 0, evs: [], initAt: 0,
     inp: [null, null],
     pz: { h: document.visibilityState === 'hidden', g: false, n: false },
     snakes: [mkSnake(-ARENA * .62, -6, 0), mkSnake(ARENA * .62, 6, Math.PI)]
   };
-  // шматочок: [x, y, з якого кроку його можна підібрати, чий він (-1 — нічий)]; нових під час раунду не з'являється
-  G.food = M.pieces(layout).map(p => [p[0], p[1], 0, p[2]]);
+  // шматочок: [x, y, з якого кроку його можна підібрати, чий він (-1 — нічий), номер]; нових під час раунду не з'являється
+  G.food = M.pieces(layout).map(p => [p[0], p[1], 0, p[2], ++G.pid]);
 }
 
 // стіна майданчика: дракон не відскакує, а ковзає вздовж неї
@@ -645,6 +687,7 @@ function cutTail(by, t, j, ev) {
   const a = G.snakes[by], s = G.snakes[t];
   const hx = Math.cos(a.a), hy = Math.sin(a.a);
   const sc = [];
+  const hit = segAt(s, j), hitX = r2(hit[0]), hitY = r2(hit[1]);
   for (let m = j; m <= s.len; m++) {
     const p = segAt(s, m);
     // шматочок, у який влучили, відлітає вперед; решта ледь зсувається
@@ -652,11 +695,11 @@ function cutTail(by, t, j, ev) {
     const r = Math.hypot(tx, ty), max = ARENA - 2.5;
     if (r > max) { tx *= max / r; ty *= max / r; }
     tx = r2(tx); ty = r2(ty);
-    G.food.push([tx, ty, G.n + LOOSE_TICKS, G.M.dropOwner(t)]);
-    sc.push(r2(p[0]), r2(p[1]), tx, ty);
+    const id = ++G.pid;
+    G.food.push([tx, ty, G.n + LOOSE_TICKS, G.M.dropOwner(t), id]);
+    sc.push(r2(p[0]), r2(p[1]), id);                 // звідки полетів шматочок і який саме (куди — видно зі списку шматочків)
   }
-  const hit = segAt(s, j);
-  ev.push(['c', t, r2(hit[0]), r2(hit[1]), r3(hx), r3(hy), by]);
+  ev.push(['c', t, hitX, hitY, r3(hx), r3(hy), by]);
   ev.push(['d', sc]);
   s.len = j - 1;
   G.fdirty = true;
@@ -681,7 +724,7 @@ function headBounce(ev) {
     vx = vx / l + ux * .35; vy = vy / l + uy * .35;
     s.a = Math.atan2(vy, vx); s.ta = s.a;
     wallSlide(s);
-    s.trail[0] = [s.x, s.y];
+    s.trail.set(0, s.x, s.y);
     s.slow = SLOW_TICKS; s.lock = SLOW_TICKS + ticks(100);
   });
   ev.push(['b', 0, r2(mx), r2(my)]);
@@ -708,10 +751,9 @@ function step(ev) {
   // рух: плавний поворот до бажаного напрямку
   G.snakes.forEach((s, i) => {
     const n = moveOnce(s, G.n, G.inp[i]);
-    if (n) { s.trail.unshift([s.x, s.y]); s.pc++; }
+    if (n) { s.trail.push(s.x, s.y); s.pc++; }
     s.np = n;
-    const max = Math.ceil((s.len + 1) * K) + 2;
-    if (s.trail.length > max) s.trail.length = max;
+    s.trail.trim(Math.ceil((s.len + 1) * K) + 2);
   });
   // Голова наїхала на шматочок: він чіпляється до хвоста.
   // Якщо обидві голови дотяглися в той самий крок, шматочок дістається ближчій; за рівної відстані — жереб.
@@ -725,8 +767,8 @@ function step(ev) {
     if (!c0 && !c1) continue;
     const i = c0 && c1 ? (Math.abs(d0 - d1) < 1e-9 ? (Math.random() < .5 ? 0 : 1) : (d0 < d1 ? 0 : 1)) : (c0 ? 0 : 1);
     G.snakes[i].len++;
-    ev.push(['e', i, f[0], f[1]]);
-    G.food.splice(k, 1);
+    ev.push(['e', i, f[0], f[1], f[4]]);
+    dropAt(G.food, k);                               // порядок шматочків у списку значення не має
     G.fdirty = true;
   }
   // зіткнення
@@ -740,7 +782,7 @@ function step(ev) {
         const o = G.snakes[t];
         for (let j = (t === i ? 3 : 1); j <= o.len; j++) {
           if (j * K > o.trail.length - 1) break;       // ця ланка ще не «виїхала» з-під голови
-          const p = trailPt(o.trail, j * K);
+          const p = o.trail.at(j * K, SP);
           if ((s.x - p[0]) ** 2 + (s.y - p[1]) ** 2 < lim) { cuts.push([i, t, j]); break; }
         }
       }
@@ -766,56 +808,61 @@ const HIST = ticks(150);          // скільки останніх точок 
 const FREP = ticks(100);          // у скількох пакетах поспіль повторюємо шматочки після зміни
 const EV_TICKS = ticks(125);      // скільки кроків повторюємо подію
 const ci = v => Math.round(v * 100);
-const dec = a => { const o = []; for (let k = 0; k + 1 < a.length; k += 2) o.push([a[k] / 100, a[k + 1] / 100]); return o; };
 let ivSeq = 0, lastEmit = 0;
+
+/* Стан гри — щільний список чисел. Саме в такому вигляді він летить мережею і в такому ж застосовується
+   на екрані (у тому числі в того, хто рахує гру): окремого «внутрішнього» вигляду немає, тож нічого
+   не перекладається з одного формату в інший.
+     стан:   [номер пакета, крок гри, прапорці, відлік, час, номер повної картини, версія шматочків,
+              дракон 0, дракон 1, події або 0, шматочки (лише коли змінились)]
+     дракон: [точок сліду за раунд, напрямок×1000, довжина хвоста, куди кермує×1000,
+              скільки кроків ще пригальмований, скільки кроків ще не слухається керма,
+              найновіша точка (x, y), далі старіші точки різницями]
+     прапорці: фаза (0 відлік, 1 гра, 2 кінець) + пауза×4 + показ за меню×16 + номер режиму×32 */
+const S_K = 0, S_N = 1, S_FL = 2, S_C = 3, S_TL = 4, S_IV = 5, S_FV = 6, S_D0 = 7, S_EV = 9, S_FOOD = 10;
+const D_PC = 0, D_A = 1, D_LEN = 2, D_TA = 3, D_SLOW = 4, D_LOCK = 5, D_PTS = 6;
+const PHASES = ['count', 'play', 'over'];
+const NO_EVENTS = [];
 
 function pack(ev) {
   for (const e of ev) G.evs.push([++G.eid, G.n, e]);
   while (G.evs.length && G.evs[0][1] < G.n - EV_TICKS) G.evs.shift();
   if (G.fdirty) { G.fdirty = false; G.fv++; G.frep = FREP; }
-  const m = {
-    k: ++stateSeq, n: G.n, p: G.phase, c: G.count, tl: G.ticksLeft, iv: G.iv, fv: G.fv,
-    z: !paused() ? 0 : (G.pz.h || G.pz.g ? 1 : 2),
-    s: G.snakes.map(s => {
-      const tr = s.trail, L = Math.min(HIST, tr.length), h = [];
-      let px = ci(tr[0][0]), py = ci(tr[0][1]);
-      h.push(px, py);                                  // найновіша точка цілком, старіші — різницями (коротше)
-      for (let j = 1; j < L; j++) { const x = ci(tr[j][0]), y = ci(tr[j][1]); h.push(x - px, y - py); px = x; py = y; }
-      return { c: s.pc, h, a: r3(s.a), l: s.len, t: r3(s.ta), w: s.slow, k: s.lock };   // t: куди кермує, w і k: скільки ще кроків пригальмований і не слухається керма
-    })
-  };
-  if (G.evs.length) m.e = G.evs.map(x => [x[0], x[2]]);
-  if (G.demo) m.demo = 1;
-  m.md = MODE_IDS.indexOf(G.mode);
-  if (G.frep > 0) { G.frep--; m.f = foodWire(); }
-  return m;
-}
-// шматочки в дорогу: пари координат, а в класиці ще й колір
-const foodWire = () => G.food.map(f => G.M.colored ? [ci(f[0]), ci(f[1]), f[3]] : [ci(f[0]), ci(f[1])]).flat();
-const decFood = (a, colored) => { if (!colored) return dec(a); const o = []; for (let k = 0; k + 2 < a.length; k += 3) o.push([a[k] / 100, a[k + 1] / 100, a[k + 2]]); return o; };
-// У дорогу стан іде не об'єктом із назвами полів, а щільним списком чисел: так він майже вдвічі коротший.
-const PHASES = ['count', 'play', 'over'];
-function encState(m) {
-  const a = [m.k, m.n, PHASES.indexOf(m.p) + m.z * 4 + (m.demo ? 16 : 0) + m.md * 32, m.c, m.tl, m.iv, m.fv];
-  for (const o of m.s) a.push([o.c, Math.round(o.a * 1000), o.l, Math.round(o.t * 1000), o.w, o.k].concat(o.h));
-  a.push(m.e || 0);
-  if (m.f) a.push(m.f);
+  const z = !paused() ? 0 : (G.pz.h || G.pz.g ? 1 : 2);
+  const a = [++stateSeq, G.n, PHASES.indexOf(G.phase) + z * 4 + (G.demo ? 16 : 0) + MODE_IDS.indexOf(G.mode) * 32, G.count, G.ticksLeft, G.iv, G.fv];
+  for (const s of G.snakes) {
+    const tr = s.trail, L = Math.min(HIST, tr.length);
+    let px = ci(tr.x(0)), py = ci(tr.y(0));
+    const d = [s.pc, Math.round(s.a * 1000), s.len, Math.round(s.ta * 1000), s.slow, s.lock, px, py];
+    for (let j = 1; j < L; j++) { const x = ci(tr.x(j)), y = ci(tr.y(j)); d.push(x - px, y - py); px = x; py = y; }
+    a.push(d);
+  }
+  a.push(G.evs.length ? G.evs.map(x => [x[0], x[2]]) : 0);
+  if (G.frep > 0) { G.frep--; a.push(foodWire()); }
   return a;
 }
-function decState(a) {
-  if (!Array.isArray(a) || a.length < 10 || !Array.isArray(a[7]) || !Array.isArray(a[8])) return null;
-  const fl = a[2], S = x => ({ c: x[0], a: x[1] / 1000, l: x[2], t: x[3] / 1000, w: x[4], k: x[5], h: x.slice(6) });
-  return {
-    k: a[0], n: a[1], p: PHASES[fl & 3], z: (fl >> 2) & 3, demo: fl & 16 ? 1 : 0, md: fl >> 5, c: a[3], tl: a[4], iv: a[5], fv: a[6],
-    s: [S(a[7]), S(a[8])], e: a[9] || null, f: a[10] || null
-  };
+const validState = a => Array.isArray(a) && a.length >= 10 && Array.isArray(a[S_D0]) && Array.isArray(a[S_D0 + 1]) && a[S_D0].length >= D_PTS + 2 && a[S_D0 + 1].length >= D_PTS + 2;
+// шматочки в дорогу: номер і координати, а якщо в режимі шматочки мають господарів, то й господар
+function foodWire() {
+  const o = [], col = G.M.colored;
+  for (const f of G.food) {
+    if (f[4] == null) f[4] = ++G.pid;
+    o.push(f[4], ci(f[0]), ci(f[1]));
+    if (col) o.push(f[3]);
+  }
+  return o;
 }
-
+// на екрані шматочок — це [x, y, чий (-1 — нічий), номер]
+function decFood(a, colored) {
+  const o = [], w = colored ? 4 : 3;
+  for (let k = 0; k + w <= a.length; k += w) o.push([a[k + 1] / 100, a[k + 2] / 100, colored ? a[k + 3] : -1, a[k]]);
+  return o;
+}
 function packInit() {             // повна картина: усі сліди й шматочки
   G.iv = ++ivSeq; G.needInit = false; G.initAt = performance.now();
   return {
     iv: G.iv, n: G.n, eid: G.eid, fv: G.fv + (G.fdirty ? 1 : 0), md: MODE_IDS.indexOf(G.mode),
-    s: G.snakes.map(s => ({ c: s.pc, tr: s.trail.map(p => [ci(p[0]), ci(p[1])]).flat(), a: r3(s.a), l: s.len })),
+    s: G.snakes.map(s => { const tr = []; for (let j = 0; j < s.trail.length; j++) tr.push(ci(s.trail.x(j)), ci(s.trail.y(j))); return { c: s.pc, tr, a: r3(s.a), l: s.len }; }),
     f: foodWire()
   };
 }
@@ -826,7 +873,7 @@ function packInit() {             // повна картина: усі слід�
    грає «через таку саму мережу»: його власна картинка і його власне кермо штучно запізнюються рівно
    на стільки, скільки сигнал іде до другого гравця. У підсумку в обох однаково: і те, наскільки
    свіжу картинку вони бачать, і те, як швидко дракон слухається керма. */
-const viewQ = [], aimQ = [];
+const viewQ = new Queue(), aimQ = new Queue();
 let viewAt = 0, aimAt = 0;
 function lagMs() {                // оцінка шляху в один бік: половина часу «туди й назад» тим шляхом, яким іде гра
   const N = net;
@@ -845,10 +892,10 @@ function hostView(it) {           // картинка того, хто раху�
   viewQ.push(it);
 }
 function drainView(now) {
-  while (viewQ.length && viewQ[0].at <= now) applyItem(viewQ.shift());
+  while (viewQ.length && viewQ.peek().at <= now) applyItem(viewQ.shift());
 }
 function hostAimDue(now) {        // і кермо того, хто рахує, доходить до гри з тією ж затримкою
-  while (aimQ.length && aimQ[0].at <= now) G.inp[0] = aimQ.shift().a;
+  while (aimQ.length && aimQ.peek().at <= now) G.inp[0] = aimQ.shift().a;
 }
 
 function emit(ev) {
@@ -860,7 +907,7 @@ function emit(ev) {
   }
   const m = pack(ev);
   hostView({ m });
-  if (conn && conn.open) { try { conn.send({ t: 's', g: encState(m) }); } catch (e) {} }
+  if (conn && conn.open) { try { conn.send({ t: 's', g: m }); } catch (e) {} }
 }
 
 function hostTick() {
@@ -947,7 +994,7 @@ function resetView() {
   V.iv = -1; V.fv = -1; V.eid = 0; V.needSync = false; V.jit = 0; V.lossAt = -1e9; V.M = MODES.race; V.sec = 0; redraw = true;
   cams[0].on = cams[1].on = false;
   V.scat.clear(); V.bumps.length = 0; V.gone.clear(); hist.length = 0;
-  viewQ.length = 0; aimQ.length = 0; viewAt = 0; aimAt = 0;
+  viewQ.clear(); aimQ.clear(); viewAt = 0; aimAt = 0;
   lastPhase = null; lastCountNum = null; myAim = null;
   fly.length = 0; parts.length = 0; shake = 0;
   $('count').hidden = true; $('pause').hidden = true;
@@ -965,49 +1012,56 @@ function startMatch() {
    ПРИЙОМ СТАНУ (однаково для обох гравців)
    ===================================================================== */
 const hudCache = {};
+const hud = { a: -1, b: -1, sec: -1 };   // що зараз написано на табло: сторінку чіпаємо, лише коли число змінилось
 let timerLow = false;
 const fmtTime = sec => Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 function setText(id, t) { if (hudCache[id] !== t) { hudCache[id] = t; $(id).textContent = t; } }
 
+// дракон на екрані: слід (кільце), скільки точок сліду було за раунд, і коротка історія «скільки точок додав кожен крок»
+function mkView(o) {
+  const tr = new Trail(), src = o.tr;
+  for (let k = src.length - 2; k >= 0; k -= 2) tr.push(src[k] / 100, src[k + 1] / 100);   // у пакеті точки від найновішої; у кільце кладемо від найстарішої
+  return { trail: tr, pc: o.c, adv: new Float32Array(ADV_CAP), advH: 0, advN: 0, a: o.a, len: o.l, ta: o.a, sl: 0, lk: 0 };
+}
 function applyInit(i) {            // повна картина прийшла: починаємо з чистого аркуша
-  V.s = i.s.map(o => ({ trail: dec(o.tr), pc: o.c, adv: [], a: o.a, len: o.l, ta: o.a, sl: 0, lk: 0 }));
+  V.s = i.s.map(mkView);
   V.M = modeOf(MODE_IDS[i.md]);
   V.food = decFood(i.f, V.M.colored); V.fv = i.fv; V.iv = i.iv; V.eid = i.eid; V.needSync = false; V.n = i.n;
-  V.off = null; V.scat.clear(); V.bumps.length = 0; fly.length = 0;
+  V.off = null; V.scat.clear(); V.gone.clear(); V.bumps.length = 0; fly.length = 0;
 }
 
-const ADV_MAX = ticks(300);       // на скільки кроків назад пам'ятаємо, скільки точок сліду додав кожен крок
-const hpts = [];                  // тимчасовий список точок (щоб не створювати його 80 разів на секунду)
+const ADV_CAP = 1 << Math.ceil(Math.log2(ticks(300) + 1));   // на стільки кроків назад пам'ятаємо, скільки точок сліду додав кожен крок (теж кільце)
+const advAt = (vs, i) => vs.adv[(vs.advH - i) & (ADV_CAP - 1)];
+function advPush(vs, v) { vs.advH = (vs.advH + 1) & (ADV_CAP - 1); vs.adv[vs.advH] = v; if (vs.advN < ADV_CAP) vs.advN++; }
+const HX = new Float64Array(HIST + 1), HY = new Float64Array(HIST + 1);   // сюди розгортаємо точки з пакета
 function applyState(m, at) {
   const now = at || performance.now();
-  if (!V.s || m.iv !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
-  const dn = clamp(m.n - V.n, 0, ADV_MAX);                 // скільки кроків гри минуло з попереднього стану (більше одного, якщо пакет загубився)
-  for (let j = 0; j < m.s.length; j++) {
-    const o = m.s[j], vs = V.s[j], h = o.h, L = h.length >> 1;
-    let x = h[0], y = h[1];
-    hpts.length = 0;
-    hpts.push([x / 100, y / 100]);
-    for (let q = 1; q < L; q++) { x += h[q * 2]; y += h[q * 2 + 1]; hpts.push([x / 100, y / 100]); }
-    const d = o.c - vs.pc;                           // скільки нових точок з'явилось відтоді, як ми чули востаннє
+  if (!V.s || m[S_IV] !== V.iv) return false;           // стан від іншої «повної картини»: чекаємо на неї
+  const n = m[S_N], fl = m[S_FL], phase = PHASES[fl & 3];
+  const dn = clamp(n - V.n, 0, ADV_CAP);           // скільки кроків гри минуло з попереднього стану (більше одного, якщо пакет загубився)
+  for (let j = 0; j < 2; j++) {
+    const o = m[S_D0 + j], vs = V.s[j], tr = vs.trail, L = Math.min((o.length - D_PTS) >> 1, HIST + 1);
+    let x = o[D_PTS], y = o[D_PTS + 1];
+    HX[0] = x / 100; HY[0] = y / 100;
+    for (let q = 1; q < L; q++) { x += o[D_PTS + q * 2]; y += o[D_PTS + q * 2 + 1]; HX[q] = x / 100; HY[q] = y / 100; }
+    const d = o[D_PC] - vs.pc;                           // скільки нових точок з'явилось відтоді, як ми чули востаннє
     if (d > 0) {
-      for (let q = Math.min(d, L); q > 0; q--) vs.trail.unshift(null);
+      for (let q = Math.min(d, L) - 1; q >= 0; q--) tr.push(HX[q], HY[q]);
       if (d > L) V.needSync = true;                  // пропустили більше, ніж уміщає пакет: попросимо повну картину
-      vs.pc = o.c;
+      vs.pc = o[D_PC];
     }
-    for (let q = 0; q < L && q < vs.trail.length; q++) vs.trail[q] = hpts[q];   // найновіші точки завжди точно як у того, хто рахує
-    for (let q = 0; q < dn; q++) vs.adv.unshift(Math.max(0, d) / dn);   // на кожен крок гри свій запис: рух лишається рівним і після втрати
-    if (vs.adv.length > ADV_MAX) vs.adv.length = ADV_MAX;
-    const max = Math.ceil((o.l + 1) * K) + ticks(550);
-    if (vs.trail.length > max) vs.trail.length = max;
-    vs.a = o.a; vs.len = o.l; vs.ta = o.t; vs.sl = o.w; vs.lk = o.k;
+    for (let q = Math.min(L, tr.length) - 1; q >= 0; q--) tr.set(q, HX[q], HY[q]);   // найновіші точки завжди точно як у того, хто рахує
+    for (let q = 0; q < dn; q++) advPush(vs, Math.max(0, d) / dn);   // на кожен крок гри свій запис: рух лишається рівним і після втрати
+    tr.trim(Math.ceil((o[D_LEN] + 1) * K) + ticks(550));
+    vs.a = o[D_A] / 1000; vs.len = o[D_LEN]; vs.ta = o[D_TA] / 1000; vs.sl = o[D_SLOW]; vs.lk = o[D_LOCK];
   }
-  if (m.fv !== V.fv) {
-    if (m.f) { V.food = decFood(m.f, V.M.colored); V.fv = m.fv; } else V.needSync = true;
+  if (m[S_FV] !== V.fv) {
+    if (m[S_FOOD]) { V.food = decFood(m[S_FOOD], V.M.colored); V.fv = m[S_FV]; } else V.needSync = true;
   }
-  V.phase = m.p; V.n = m.n; V.z = m.z || 0;
+  V.phase = phase; V.n = n; V.z = (fl >> 2) & 3;
 
   // плавний годинник відтворення: згладжує нерівномірний прихід кроків
-  const sample = m.n * TICK - now;
+  const sample = n * TICK - now;
   if (V.off == null || Math.abs(sample - V.off) > 250) { V.off = sample; V.jit = 0; }   // годинник перескакує лише після справді великого збою
   else {
     V.jit += (Math.abs(V.off - sample) - V.jit) * .04;   // наскільки нерівно приходять пакети (звичайний розкид, а не найгірший випадок)
@@ -1015,22 +1069,22 @@ function applyState(m, at) {
   }
   redraw = true;
 
-  V.demo = !!m.demo;
-  const evs = m.e || [];
+  V.demo = (fl & 16) !== 0;
+  const evs = m[S_EV] || NO_EVENTS, la = m[S_D0][D_LEN], lb = m[S_D0 + 1][D_LEN];
   if (V.demo) { for (const e of evs) if (e[0] > V.eid) { V.eid = e[0]; fx(e[1], now, true); } return true; }   // показ за меню: без рахунку, звуків і вікон
 
   if ($('hud').hidden) { $('hud').hidden = false; layoutInsets(); }
-  setText('s0', String(m.s[0].l));
-  setText('s1', String(m.s[1].l));
+  if (hud.a !== la) { hud.a = la; $('s0').textContent = la; }
+  if (hud.b !== lb) { hud.b = lb; $('s1').textContent = lb; }
   const M = V.M, timed = M.seconds > 0;
-  setPips($('pips'), M, m.s[0].l, m.s[1].l);
+  setPips($('pips'), M, la, lb);
   // якщо час обмежений, секундомір іде вниз; якщо ні — вгору (скільки триває раунд)
-  const sec = timed ? Math.max(0, Math.ceil(m.tl / TPS)) : Math.floor(m.tl / TPS);
+  const sec = timed ? Math.max(0, Math.ceil(m[S_TL] / TPS)) : Math.floor(m[S_TL] / TPS);
   V.sec = sec;
-  setText('timer', fmtTime(sec));
-  const low = timed && m.p === 'play' && sec <= 10;
+  if (hud.sec !== sec) { hud.sec = sec; $('timer').textContent = fmtTime(sec); }
+  const low = timed && phase === 'play' && sec <= 10;
   if (low !== timerLow) { timerLow = low; $('timer').classList.toggle('low', low); }
-  if (timed && m.p === 'play' && sec !== lastSec && sec <= 5 && sec > 0) beep(740, .05, 'square', .04);   // останні секунди чути
+  if (timed && phase === 'play' && sec !== lastSec && sec <= 5 && sec > 0) beep(740, .05, 'square', .04);   // останні секунди чути
   lastSec = sec;
 
   for (const e of evs) if (e[0] > V.eid) { V.eid = e[0]; fx(e[1], now, false); }   // кожна подія спрацьовує один раз, хоч і приходить кілька разів
@@ -1038,15 +1092,15 @@ function applyState(m, at) {
   const countEl = $('count');
   pauseBanner();
   if (V.z) { countEl.hidden = true; lastCountNum = null; }
-  else if (m.p === 'count') {
-    const n = Math.max(1, Math.ceil(m.c / TPS));
-    if (n !== lastCountNum) { lastCountNum = n; countEl.textContent = n; countEl.hidden = false; beep(440, .1); }
+  else if (phase === 'count') {
+    const left = Math.max(1, Math.ceil(m[S_C] / TPS));
+    if (left !== lastCountNum) { lastCountNum = left; countEl.textContent = left; countEl.hidden = false; beep(440, .1); }
   }
-  if (m.p !== lastPhase) {
-    if (m.p === 'count') { show(null); keepAwake(); document.title = TITLE; if (lastPhase !== 'play') { myAim = null; hist.length = 0; } }
-    if (m.p === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); resteer(); coachOnce(); }
-    if (m.p === 'over') { countEl.hidden = true; lastCountNum = null; releaseInput(); showOver(m.s[0].l, m.s[1].l); }
-    lastPhase = m.p;
+  if (phase !== lastPhase) {
+    if (phase === 'count') { show(null); keepAwake(); document.title = TITLE; if (lastPhase !== 'play') { myAim = null; hist.length = 0; } }
+    if (phase === 'play') { countEl.hidden = true; lastCountNum = null; show(null); beep(880, .22); resteer(); coachOnce(); }
+    if (phase === 'over') { countEl.hidden = true; lastCountNum = null; releaseInput(); showOver(la, lb); }
+    lastPhase = phase;
   }
   return true;
 }
@@ -1056,9 +1110,9 @@ function fx(e, now, quiet) {
   const me = mode === 'guest' ? 1 : 0;
   const beep = quiet ? () => {} : window.__beep;
   if (t === 'e') {                 // шматочок причепився до хвоста
-    if (V.gone.has(x + ',' + y)) V.gone.set(x + ',' + y, now);   // на екрані він уже полетів до голови
+    if (V.gone.has(e[4])) V.gone.set(e[4], now);     // на екрані він уже полетів до голови
     else fly.push({ x, y, i, t0: now });
-    V.scat.delete(x + ',' + y);
+    V.scat.delete(e[4]);
     beep(i ? 620 : 520, .08, 'triangle', mode === 'local' || i === me ? .08 : .04);
   }
   else if (t === 'c') {            // хвіст розірвано: іскри, струс, хвиля по тілу
@@ -1073,7 +1127,7 @@ function fx(e, now, quiet) {
     if (!REDUCED && !quiet) shake = 6;
     beep(130, .16, 'square', .05, .7);
   }
-  else if (t === 'd') { const a = i; for (let k = 0; k + 3 < a.length; k += 4) V.scat.set(a[k + 2] + ',' + a[k + 3], { fx: a[k], fy: a[k + 1], t0: now }); }
+  else if (t === 'd') { const a = i; for (let k = 0; k + 2 < a.length; k += 3) V.scat.set(a[k + 2], { fx: a[k], fy: a[k + 1], t0: now }); }   // звідки летить шматочок із цим номером
   else if (t === 'o') { beep(520, .15); setTimeout(() => beep(390, .3), 160); }
 }
 
@@ -1081,9 +1135,8 @@ function fx(e, now, quiet) {
 // Табло з кружечків. Що саме вони означають, вирішує режим (див. pips у MODES);
 // тут лише малюємо те, що він сказав, і чіпаємо сторінку тільки коли щось змінилось.
 function setPips(el, M, a, b) {
-  const key = (M.label || '') + '|' + a + '|' + b;
-  if (el._key === key) return;
-  el._key = key;
+  if (el._M === M && el._a === a && el._b === b) return;
+  el._M = M; el._a = a; el._b = b;
   const spec = M.pips(a, b), n = spec.c.length;
   if (el.children.length !== n) { el.textContent = ''; for (let k = 0; k < n; k++) el.appendChild(document.createElement('i')); }
   const cols = spec.gap ? 'repeat(' + spec.gap + ',1fr) 6px repeat(' + (n - spec.gap) + ',1fr)' : 'repeat(' + n + ',1fr)';
@@ -1198,46 +1251,49 @@ function makeArena(u) {
   g.beginPath(); g.arc(0, 0, R, 0, TAU); g.stroke();
 }
 
-function trailAt(tr, f) {
-  const i0 = Math.min(tr.length - 1, Math.floor(f)), i1 = Math.min(tr.length - 1, i0 + 1);
-  const t = f - Math.floor(f), a = tr[i0], b = tr[i1];
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-}
-// скільки точок сліду відповідає затримці відтворення (дракон міг стояти, летіти чи розганятись)
+// скільки точок сліду відповідає затримці відтворення (дракон міг стояти чи пригальмувати)
 function idxOff(vs, back) {
   let o = 0, b = back;
-  for (let i = 0; i < vs.adv.length && b > 0; i++) {
-    const c = vs.adv[i];
+  for (let i = 0; i < vs.advN && b > 0; i++) {
+    const c = advAt(vs, i);
     if (b >= 1) { o += c; b -= 1; } else { o += c * b; b = 0; }
   }
   return o;
 }
-// Де намалювати голову. Якщо потрібний момент ще не настав у отриманих даних (пакет запізнюється),
-// не зупиняємо дракона, а домальовуємо його рух уперед тим самим ходом і з тим самим поворотом.
-// Коли дані прийдуть, справжнє місце майже збігається з домальованим, і ривка не видно.
-function pose(vs, back) {
+// Положення голови на екрані. Два записи (по одному на дракона) живуть увесь час і щокадру лише оновлюються.
+//   x, y, a  де голова й куди дивиться
+//   off      на яку частку кроку голова позаду найновішої точки шляху
+//   pn       скільки точок шляху попереду справжнього сліду передбачено (px, py: від найстарішої до найновішої)
+const POSES = [0, 1].map(() => ({ x: 0, y: 0, a: 0, off: 0, pn: 0, px: new Float64Array(ticks(200) + 2), py: new Float64Array(ticks(200) + 2) }));
+const TP = [0, 0], TQ = [0, 0];
+// Де намалювати голову без передбачення (гра на одній клавіатурі, показ за меню, відлік).
+// Якщо потрібний момент ще не настав у отриманих даних, домальовуємо рух уперед тим самим ходом і поворотом.
+function pose(vs, back, out) {
   const tr = vs.trail;
+  out.pn = 0;
   if (back < 0 && tr.length > 2) {
-    const dx = tr[0][0] - tr[1][0], dy = tr[0][1] - tr[1][1];
+    const dx = tr.x(0) - tr.x(1), dy = tr.y(0) - tr.y(1);
     if (dx * dx + dy * dy > 1e-6) {
-      const rate = Math.min(1, vs.adv.length > 1 ? (vs.adv[0] + vs.adv[1]) / 2 : 1);   // точок сліду за крок (менше одиниці, коли дракон пригальмував)
-      let ext = -back * rate, a = Math.atan2(dy, dx), x = tr[0][0], y = tr[0][1];
-      const w = clamp(angDiff(a, Math.atan2(tr[1][1] - tr[2][1], tr[1][0] - tr[2][0])), -TURN_STEP, TURN_STEP);
-      const off = -ext;
+      const rate = Math.min(1, vs.advN > 1 ? (advAt(vs, 0) + advAt(vs, 1)) / 2 : 1);   // точок сліду за крок (менше одиниці, коли дракон пригальмував)
+      let ext = -back * rate, a = Math.atan2(dy, dx), x = tr.x(0), y = tr.y(0);
+      const w = clamp(angDiff(a, Math.atan2(tr.y(1) - tr.y(2), tr.x(1) - tr.x(2))), -TURN_STEP, TURN_STEP);
+      out.off = -ext;
       while (ext > 0) { const k = Math.min(1, ext); a += w * k; x += Math.cos(a) * STEP * k; y += Math.sin(a) * STEP * k; ext -= k; }
       const r = Math.hypot(x, y), max = ARENA - R_HEAD;
       if (r > max) { x *= max / r; y *= max / r; }   // за край майданчика не виїжджаємо навіть на домальованому кадрі
-      return { x, y, a, off };
+      out.x = x; out.y = y; out.a = a;
+      return out;
     }
     back = 0;
   }
-  const off = idxOff(vs, Math.max(0, back)), p = trailAt(tr, off);
+  const off = idxOff(vs, Math.max(0, back)), p = tr.at(off, TP);
   let a = vs.a;
   if (tr.length > 2) {
-    const q = trailAt(tr, off + 1.5), dx = p[0] - q[0], dy = p[1] - q[1];
+    const q = tr.at(off + 1.5, TQ), dx = p[0] - q[0], dy = p[1] - q[1];
     if (dx * dx + dy * dy > 1e-4) a = Math.atan2(dy, dx);
   }
-  return { x: p[0], y: p[1], a, off };
+  out.x = p[0]; out.y = p[1]; out.a = a; out.off = off;
+  return out;
 }
 const PALS = COL.map(c => ({ main: c.main, alt: c.alt, light: c.light, ink: INK }));
 const seen = (x, y, m) => x > vis.x0 - m && x < vis.x1 + m && y > vis.y0 - m && y < vis.y1 + m;
@@ -1319,14 +1375,25 @@ function drawHead(cx, cy, ang, idx, look) {
   ctx.restore();
 }
 
+// Точка шляху з номером q: спершу йдуть передбачені точки (від найновішої), за ними справжній слід.
+// Результат кладе в PX, PY.
+let PX = 0, PY = 0;
+function pathPt(tr, ps, q) {
+  const pn = ps.pn;
+  if (q < pn) { PX = ps.px[pn - 1 - q]; PY = ps.py[pn - 1 - q]; return; }
+  const k = q - pn < tr.length ? q - pn : tr.length - 1;
+  PX = tr.x(k); PY = tr.y(k);
+}
 function drawSnake(vs, idx, ps, now, aim) {
-  const tr = ps.tr || vs.trail, n = vs.len, last = tr.length - 1;
-  if (last < 0) return;
+  const tr = vs.trail, n = vs.len;
+  if (!tr.length) return;
   const bumps = V.bumps, set = spr.seg[idx];
-  for (let i = n; i >= 1; i--) {   // хвіст: від кінця до голови; усе рахуємо на місці, без тимчасових об'єктів
+  for (let i = n; i >= 1; i--) {   // хвіст: від кінця до голови; на кожну ланку дві точки шляху, слід не копіюється
     const f = i * K + ps.off, fi = Math.floor(f), t = f - fi;
-    const a = tr[fi < last ? fi : last], b = tr[fi + 1 < last ? fi + 1 : last];
-    let x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+    pathPt(tr, ps, fi);
+    const ax = PX, ay = PY;
+    pathPt(tr, ps, fi + 1);
+    let x = ax + (PX - ax) * t, y = ay + (PY - ay) * t;
     for (let q = 0; q < bumps.length; q++) {          // хвиля по тілу від удару
       const bp = bumps[q];
       if (bp.i !== idx) continue;
@@ -1348,7 +1415,7 @@ function drawSnake(vs, idx, ps, now, aim) {
   let ha = ps.a, look = null;
   if (aim != null) {
     look = angDiff(aim, ps.a);
-    const lead = ps.tr ? 0 : TURN * Math.min(.13, (lagMs() * 2 + delayCur * TICK + 25) / 1000);   // коли рух передбачається, голова й так повертає одразу
+    const lead = ps.pn ? 0 : TURN * Math.min(.13, (lagMs() * 2 + delayCur * TICK + 25) / 1000);   // коли рух передбачається, голова й так повертає одразу
     ha += clamp(look, -lead, lead);
     look = angDiff(aim, ha);
   }
@@ -1398,14 +1465,14 @@ function miniMap(camIdx, MR, now, poses) {
   for (const own of (V.M.colored ? [0, 1] : [-1])) {  // якщо шматочки мають господарів, крапки на мінікарті теж кольорові
     g.fillStyle = own < 0 ? '#e2ad00' : COL[own].main;
     g.beginPath();
-    for (const f of V.food) { if (own >= 0 && f[2] !== own) continue; g.moveTo(f[0] * ms + 1.6, f[1] * ms); g.arc(f[0] * ms, f[1] * ms, 1.6, 0, TAU); }
+    for (const f of V.food) { if (f[2] !== own) continue; g.moveTo(f[0] * ms + 1.6, f[1] * ms); g.arc(f[0] * ms, f[1] * ms, 1.6, 0, TAU); }
     g.fill();
   }
-  for (const i of (camIdx === 0 ? [1, 0] : [0, 1])) {
-    const vs = V.s[i], tr = vs.trail;
+  for (const i of ORDER[camIdx]) {
+    const vs = V.s[i], tr = vs.trail, lastPt = tr.length - 1;
     g.strokeStyle = COL[i].main; g.lineWidth = 2.6; g.lineCap = 'round'; g.lineJoin = 'round';
     g.beginPath();
-    for (let q = 0; q <= vs.len; q++) { const p = tr[Math.min(Math.round(q * K), tr.length - 1)]; g.lineTo(p[0] * ms, p[1] * ms); }
+    for (let q = 0; q <= vs.len; q++) { const k = Math.min(Math.round(q * K), lastPt); g.lineTo(tr.x(k) * ms, tr.y(k) * ms); }
     g.stroke();
     g.fillStyle = COL[i].main; g.strokeStyle = INK; g.lineWidth = 1.5;
     g.beginPath(); g.arc(poses[i].x * ms, poses[i].y * ms, i === camIdx ? 4 : 3.2, 0, TAU); g.fill(); g.stroke();
@@ -1413,6 +1480,7 @@ function miniMap(camIdx, MR, now, poses) {
   return m;
 }
 
+const AIMS = [null, null], ORDER = [[1, 0], [0, 1]];   // у якому порядку малювати драконів: свій зверху
 const fly = [];      // з'їдені шматочки, що летять до голови
 const parts = [];
 function burst(x, y, col, n) {
@@ -1426,7 +1494,7 @@ function stepParts(dt) {
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i];
     p.life += dt;
-    if (p.life >= p.max) { parts.splice(i, 1); continue; }
+    if (p.life >= p.max) { dropAt(parts, i); continue; }
     p.x += p.vx * dt / 1000; p.y += p.vy * dt / 1000;
     p.vx *= .96; p.vy *= .96;
   }
@@ -1461,11 +1529,11 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
   if (poses) {
     // шматочки; ті, що щойно відірвались від хвоста, зсуваються від місця удару
     for (const f of V.food) {
-      if (V.gone.size && V.gone.has(f[0] + ',' + f[1])) continue;
-      const sc = V.scat.size ? V.scat.get(f[0] + ',' + f[1]) : null, own = V.M.colored ? f[2] : -1;
+      if (V.gone.size && V.gone.has(f[3])) continue;
+      const sc = V.scat.size ? V.scat.get(f[3]) : undefined, own = f[2];
       if (sc) {
         const t = (now - sc.t0) / 420;
-        if (t >= 1) { V.scat.delete(f[0] + ',' + f[1]); drawFood(f[0], f[1], now, 1, own); }
+        if (t >= 1) { V.scat.delete(f[3]); drawFood(f[0], f[1], now, 1, own); }
         else { const e = 1 - (1 - t) * (1 - t); drawFood(sc.fx + (f[0] - sc.fx) * e, sc.fy + (f[1] - sc.fy) * e, now, 1, own); }
       } else drawFood(f[0], f[1], now, 1, own);
     }
@@ -1475,13 +1543,13 @@ function drawWorld(vx, vy, vw, vh, camIdx, now, poses, opt) {
       const e = t * t;
       drawFood(f.x + (h.x - f.x) * e, f.y + (h.y - f.y) * e, now, 1 - .75 * t, V.M.colored ? f.i : -1);
     }
-    const aims = [null, null];
+    const aims = AIMS; aims[0] = aims[1] = null;
     if (V.phase === 'play' && !V.z) {
       if (mode === 'guest') aims[1] = myAim;
       else if (mode === 'host') aims[0] = myAim;
       else if (G) { aims[0] = G.inp[0]; aims[1] = G.inp[1]; }
     }
-    const order = camIdx === 0 ? [1, 0] : [0, 1];      // свій дракон зверху
+    const order = ORDER[camIdx];                       // свій дракон зверху
     for (const i of order) drawSnake(V.s[i], i, poses[i], now, aims[i]);
     if (lastInput !== 'mouse' || mode === 'local') for (const i of order) drawAim(poses[i], aims[i], i);
   }
@@ -1542,31 +1610,27 @@ function noteAim(a) {
   if (L && L.tk >= tk) L.a = a; else hist.push({ tk, a });
   if (hist.length > 80) hist.shift();
 }
-function aimAtTick(j) {           // яке моє кермо вже дійшло до гри на кроці j (останнє з тих, що дійшли)
-  for (let q = hist.length - 1; q >= 0; q--) if (hist[q].tk <= j) return hist[q].a;
-  return null;
-}
-const pSim = [{}, {}], pPts = [[], []], pPool = [[], []], pTrail = [[], []];
-function predictPose(vs, i, h, mine) {
-  const tr = vs.trail, o = pSim[i], pts = pPts[i], pool = pPool[i], C = pTrail[i];
-  o.x = tr[0][0]; o.y = tr[0][1]; o.a = vs.a; o.ta = vs.ta; o.slow = vs.sl; o.lock = vs.lk;
-  const H = Math.ceil(h);
-  let px = o.x, py = o.y, pa = o.a, moved = 0;
-  pts.length = 0;
+const pSim = [{}, {}];
+function predictPose(vs, i, h, mine, out) {
+  const tr = vs.trail, o = pSim[i], H = Math.ceil(h), X = out.px, Y = out.py;
+  o.x = tr.x(0); o.y = tr.y(0); o.a = vs.a; o.ta = vs.ta; o.slow = vs.sl; o.lock = vs.lk;
+  let px = o.x, py = o.y, pa = o.a, moved = 0, pn = 0, q = -1;
   for (let j = 1; j <= H; j++) {
     px = o.x; py = o.y; pa = o.a;
-    moved = moveOnce(o, V.n + j, mine ? aimAtTick(V.n + j) : null);
-    if (moved) { const p = pool[pts.length] || (pool[pts.length] = [0, 0]); p[0] = o.x; p[1] = o.y; pts.push(p); }
+    let aim = null;
+    if (mine) {                   // моє кермо, що дійде до гри на цьому кроці: історія впорядкована, тож ідемо нею один раз
+      while (q + 1 < hist.length && hist[q + 1].tk <= V.n + j) q++;
+      if (q >= 0) aim = hist[q].a;
+    }
+    moved = moveOnce(o, V.n + j, aim);
+    if (moved) { X[pn] = o.x; Y[pn] = o.y; pn++; }
   }
-  let x = o.x, y = o.y, a = o.a, off = 0;
+  out.pn = pn; out.off = 0;
   if (H && moved) {               // останній крок пройдено лише частково
     const phi = h - (H - 1);
-    x = px + (o.x - px) * phi; y = py + (o.y - py) * phi; a = pa + angDiff(o.a, pa) * phi; off = 1 - phi;
-  }
-  C.length = 0;                   // слід для малювання: передбачені точки, а далі справжній слід
-  for (let q = pts.length - 1; q >= 0; q--) C.push(pts[q]);
-  for (let q = 0; q < tr.length; q++) C.push(tr[q]);
-  return { x, y, a, off, tr: C };
+    out.x = px + (o.x - px) * phi; out.y = py + (o.y - py) * phi; out.a = pa + angDiff(o.a, pa) * phi; out.off = 1 - phi;
+  } else { out.x = o.x; out.y = o.y; out.a = o.a; }
+  return out;
 }
 
 // Запас плавності: на скільки кроків позаду останнього стану малюємо, щоб рух не смикався.
@@ -1591,8 +1655,8 @@ function frame(now) {
   drainView(now);
   stepParts(dt);
   shake *= Math.pow(.86, dt / 16.7);
-  for (let i = fly.length - 1; i >= 0; i--) if (now - fly[i].t0 > 150) fly.splice(i, 1);
-  for (let i = V.bumps.length - 1; i >= 0; i--) if (now - V.bumps[i].t0 > 700) V.bumps.splice(i, 1);
+  for (let i = fly.length - 1; i >= 0; i--) if (now - fly[i].t0 > 150) dropAt(fly, i);
+  for (let i = V.bumps.length - 1; i >= 0; i--) if (now - V.bumps[i].t0 > 700) dropAt(V.bumps, i);
   if (!V.s) {                      // нерухома сцена (кімната до старту): малюємо один раз, а не 60 разів на секунду
     if (!redraw && !parts.length) return;
     redraw = false;
@@ -1608,8 +1672,7 @@ function frame(now) {
   }
   const want = mode === 'guest' ? bufWant(now) : mode === 'host' ? (net && net.peerBuf) || 2 : 1;   // запас плавності однаковий в обох гравців
   delayCur += (want - delayCur) * Math.min(1, dt / 600);
-  let poses;
-  const mine = mode === 'guest' ? 1 : 0;
+  const poses = POSES, mine = mode === 'guest' ? 1 : 0;
   if (PREDICT && (mode === 'host' || mode === 'guest') && V.phase === 'play' && !V.z && !V.demo && V.off != null) {
     // гра через мережу: показуємо мить, коли до гри дійде команда, дана зараз
     if (!playSince) playSince = now;
@@ -1617,17 +1680,15 @@ function frame(now) {
     pLag += (lagMs() - pLag) * (playSince === now ? 1 : 1 - Math.exp(-dt / 500));
     let h = (now + V.off) / TICK - V.n + 2 * pLag / TICK;
     h = clamp(h, 0, PRED_MAX) * Math.min(1, (now - playSince) / 350);
-    poses = [predictPose(V.s[0], 0, h, mine === 0), predictPose(V.s[1], 1, h, mine === 1)];
+    predictPose(V.s[0], 0, h, mine === 0, POSES[0]); predictPose(V.s[1], 1, h, mine === 1, POSES[1]);
     V.rt = V.n + h;
     // шматочок зникає тієї ж миті, коли на екрані на нього наїхала голова (гра підтвердить це трохи згодом)
     const rr2 = (R_HEAD + R_FOOD + .6) ** 2;
     for (const f of V.food) {
-      const own = V.M.colored ? f[2] : -1;
       for (let i = 0; i < 2; i++) {
         const dx = poses[i].x - f[0], dy = poses[i].y - f[1];
-        if (dx * dx + dy * dy >= rr2 || !V.M.canPick(own, i)) continue;
-        const key = f[0] + ',' + f[1];
-        if (!V.gone.has(key) && !V.scat.has(key)) { V.gone.set(key, now); fly.push({ x: f[0], y: f[1], i, t0: now }); }
+        if (dx * dx + dy * dy >= rr2 || !V.M.canPick(f[2], i)) continue;
+        if (!V.gone.has(f[3]) && !V.scat.has(f[3])) { V.gone.set(f[3], now); fly.push({ x: f[0], y: f[1], i, t0: now }); }
         break;
       }
     }
@@ -1636,7 +1697,7 @@ function frame(now) {
     playSince = 0;
     let back = V.off == null ? 0 : V.n - ((now + V.off) / TICK - delayCur);
     back = clamp(back, V.phase === 'play' && !V.z ? -75 / TICK : 0, 200 / TICK);   // до 75 мс можемо домалювати самі
-    poses = V.s.map(vs => pose(vs, back));
+    pose(V.s[0], back, POSES[0]); pose(V.s[1], back, POSES[1]);
     V.rt = V.n - back;
   }
   V.rp = poses;
@@ -2161,10 +2222,10 @@ function onRaw(N, p, c) {
   if (m.to && m.to !== me) return;
   if (typeof m.q === 'number') {         // те саме повідомлення могло прийти через два сервери: пропускаємо лише перший примірник
     let w = N.last[m.f];
-    if (!w) w = N.last[m.f] = { set: new Set(), list: [] };
+    if (!w) w = N.last[m.f] = { set: new Set(), ring: new Float64Array(256), at: 0 };
     if (w.set.has(m.q)) return;
-    w.set.add(m.q); w.list.push(m.q);
-    if (w.list.length > 256) w.set.delete(w.list.shift());
+    if (w.set.size === 256) w.set.delete(w.ring[w.at]);   // найстаріший номер поступається місцем новому
+    w.set.add(m.q); w.ring[w.at] = m.q; w.at = (w.at + 1) & 255;
   }
   const from = m.f;
   switch (m.t) {
@@ -2478,11 +2539,11 @@ function onGuestData(m) {
   if (m.t === 'i') { if (m.g) { applyInit(m.g); ivMissAt = 0; } return; }
   if (m.t === 'cfg') { setMode(m.md, true); return; }   // який режим вибрано в кімнаті
   if (m.t !== 's') return;
-  const g = decState(m.g);
-  if (!g || typeof g.k !== 'number' || g.k <= lastK) return;   // старе або повторне (канал не гарантує порядку)
+  const g = m.g;
+  if (!validState(g) || !(g[S_K] > lastK)) return;   // зіпсоване, старе або повторне (канал не гарантує порядку)
   const now = performance.now();
-  if (lastK > 0 && g.k > lastK + 1) V.lossAt = now;   // щось загубилось у дорозі: якийсь час тримаємо більший запас плавності
-  lastK = g.k;
+  if (lastK > 0 && g[S_K] > lastK + 1) V.lossAt = now;   // щось загубилось у дорозі: якийсь час тримаємо більший запас плавності
+  lastK = g[S_K];
   let ok = false;
   try { ok = applyState(g); } catch (e) {}
   if (!ok) {                                         // стан є, а повної картини для нього ще немає
@@ -2942,7 +3003,13 @@ if (validRoom(qRoom)) {
 setTimeout(() => { loadMqtt().catch(() => {}); }, 600);
 
 // маленьке віконце для перевірки з консолі
-window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, cfg: { K, STEP, TICK, TPS }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: curRtt(net), rttD: net.rD, rttR: net.rR, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn, text: diagText(), pc: net.pc ? net.pc.connectionState + '/' + net.pc.iceConnectionState + '/' + net.pc.signalingState : 'none', dc: (net.dcF ? net.dcF.readyState : '-') + '/' + (net.dcC ? net.dcC.readyState : '-'), hear: dcHear(net), suspectAgo: Math.round(performance.now() - net.suspect), tries: net.rtcTries }; } };
+window.__dragons = { get mode() { return mode; }, get state() { return G; }, get view() { return V; }, get lag() { return lagMs(); }, cfg: { K, STEP, TICK, TPS },
+  // для перевірок: поставити дракона рівно в задане місце з хвостом заданої довжини
+  place(s, x, y, a, len) {
+    s.x = x; s.y = y; s.a = a; s.ta = a; s.len = len; s.slow = 0; s.lock = 0; s.pc += 300; s.trail = new Trail();
+    for (let j = Math.ceil((len + 1) * K); j >= 0; j--) s.trail.push(x - Math.cos(a) * STEP * j, y - Math.sin(a) * STEP * j);
+    if (G) G.needInit = true;
+  }, get aim() { return myAim; }, get buf() { return delayCur; }, get net() { return net && { role: net.role, via: net.via, linked, weak: net.weak, brokers: net.clients.filter(c => c && c._ok).length, diag: brokerDiag(net), rtt: curRtt(net), rttD: net.rD, rttR: net.rR, peerRtt: net.peerRtt, iceRtt: net.iceRtt, turn: net.turn, text: diagText(), pc: net.pc ? net.pc.connectionState + '/' + net.pc.iceConnectionState + '/' + net.pc.signalingState : 'none', dc: (net.dcF ? net.dcF.readyState : '-') + '/' + (net.dcC ? net.dcC.readyState : '-'), hear: dcHear(net), suspectAgo: Math.round(performance.now() - net.suspect), tries: net.rtcTries }; } };
 })();
 </script>
 </body>

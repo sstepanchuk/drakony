@@ -1,34 +1,46 @@
 // Local static server. For games/ it mirrors the library: a stand-in shelf at / and the library API in every game.
+// It serves plaintext sources, so by default it only listens on this computer.
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { P, rel, exists, fail, gameIds } from './repo.js';
+import { P, rel, exists, problem, gameIds } from './repo.js';
 import { readManifest, withLibraryApi } from './build.js';
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
 const esc = s => String(s).replace(/[&<>"]/g, c => '&#' + c.charCodeAt(0) + ';');
+const text = type => type + (/^(text|application\/json)/.test(type) ? '; charset=utf-8' : '');
 
-export function serve(what = 'games', port = 8000) {
+export function serve(what = 'games', port = '8000', host = '127.0.0.1') {
   const games = what !== 'docs', dir = games ? P.games : P.site;
-  if (!exists(dir)) fail('No ' + rel(dir) + (games ? ' (run npm run unlock first)' : ''));
-  const send = (res, type, body) => res.writeHead(200, { 'Content-Type': type + (/^(text|application\/json)/.test(type) ? '; charset=utf-8' : ''), 'Cache-Control': 'no-store' }).end(body);
+  if (!exists(dir)) problem('No ' + rel(dir) + (games ? ' (run npm run unlock first)' : ''));
 
-  http.createServer((req, res) => {
-    const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  const respond = (req, res) => {
+    const send = (code, type, body) => res.writeHead(code, { 'Content-Type': text(type), 'Cache-Control': 'no-store' }).end(body);
+    let url;
+    try { url = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch (e) { return send(400, 'text/plain', 'Bad URL'); }
     if (games && url === '/') {
-      return send(res, 'text/html', '<!doctype html><meta charset="utf-8"><title>Games (dev)</title><body style="font:16px system-ui;padding:24px"><h1>Games (dev)</h1><ul>' +
+      return send(200, 'text/html', '<!doctype html><meta charset="utf-8"><title>Games (dev)</title><body style="font:16px system-ui;padding:24px"><h1>Games (dev)</h1><ul>' +
         gameIds().map(id => '<li><a href="/' + id + '/">' + esc(readManifest(id).title) + '</a></li>').join('') + '</ul>');
     }
     const game = games && url.match(/^\/([a-z0-9-]+)\/(index\.html)?$/)?.[1];
-    if (game && gameIds().includes(game)) return send(res, 'text/html', withLibraryApi(fs.readFileSync(path.join(dir, game, 'index.html'), 'utf8'), game, readManifest(game)));
-
+    if (game && gameIds().includes(game)) return send(200, 'text/html', withLibraryApi(fs.readFileSync(path.join(dir, game, 'index.html'), 'utf8'), game, readManifest(game)));
     let file = path.join(dir, url);
-    if (!file.startsWith(dir)) return res.writeHead(403).end();
+    if (file !== dir && !file.startsWith(dir + path.sep)) return send(403, 'text/plain', 'Forbidden');
     if (exists(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
-    if (!exists(file)) return res.writeHead(404).end('404');
-    send(res, TYPES[path.extname(file)] || 'application/octet-stream', fs.readFileSync(file));
-  }).listen(+port, () => {
-    console.log('http://localhost:' + port + '/');
+    if (!exists(file)) return send(404, 'text/plain', 'Not found');
+    send(200, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', fs.readFileSync(file));
+  };
+
+  http.createServer((req, res) => {
+    try { respond(req, res); }
+    catch (e) {                                          // a typo in game.json must not stop the server
+      if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(e.message);
+      console.error('✗ ' + e.message);
+    }
+  }).listen(+port, host, () => {
+    console.log('http://' + (host === '0.0.0.0' ? 'localhost' : host) + ':' + port + '/' + (host === '127.0.0.1' ? '' : '   (reachable from your network)'));
     if (games) for (const id of gameIds()) console.log('  ' + id + ': http://localhost:' + port + '/' + id + '/');
   });
 }

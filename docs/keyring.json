@@ -1,5 +1,6 @@
 {
   "v": 1,
+  "kid": "fe+73OYQft8=",
   "kdf": {
     "salt": "FpnDQZ/wU1lCipradkxQ+Q==",
     "iterations": 600000

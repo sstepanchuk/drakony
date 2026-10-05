@@ -44,6 +44,10 @@
   <a class="btn ghost" href="../">Усі ігри</a>
   <noscript><p class="err">Без JavaScript гра не відкриється.</p></noscript>
 </main>
+<script>
+  // the lock is a module: if this browser cannot run it, say so instead of spinning forever
+  setTimeout(function () { if (!window.__ihrotekaBooted) document.getElementById('busy').textContent = 'Цей браузер застарий для бібліотеки. Онови його або відкрий в іншому.'; }, 8000);
+</script>
 <script type="module">
   import { bootGame } from '../lib/lock.js';
   bootGame({{idJson}});

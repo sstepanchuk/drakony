@@ -5,6 +5,8 @@
    - Each person has an ECDH P-256 key pair. keyring.json holds, per person, a "box" with the library
      key that only their private key opens, and their private key sealed with their password
      (PBKDF2-SHA-256). People can be added or removed without knowing anyone else's password.
+   - Every sealed file starts with the id of the library key it was sealed with (keyring.kid), so a
+     file left behind by a key rotation is caught without a password (tools: check; site: "updating").
    ===================================================================== */
 const { subtle } = globalThis.crypto;
 const AES = { name: 'AES-GCM', length: 256 };
@@ -42,6 +44,24 @@ export async function unseal(key, blob, aad) {
 // the key can be used but never read back
 export const importKey = raw => subtle.importKey('raw', raw, AES, false, ['encrypt', 'decrypt']);
 export const newLibraryKey = () => random(32);
+// public id of a library key: first 8 bytes of its SHA-256 (says which key, reveals nothing about it)
+export const keyId = async raw => b64(new Uint8Array(await subtle.digest('SHA-256', raw)).subarray(0, 8));
+
+/* ---------- sealed files: [1][8-byte key id][12-byte iv][ciphertext + tag] ---------- */
+const FILE_V = 1, KID = 8;
+export async function sealFile(key, kid, data, aad) {
+  const body = await seal(key, data, aad), out = new Uint8Array(1 + KID + body.length);
+  out[0] = FILE_V;
+  out.set(unb64(kid), 1);
+  out.set(body, 1 + KID);
+  return out;
+}
+// key id a file was sealed with, or null if it is not a sealed file
+export function fileKid(blob) {
+  const u = new Uint8Array(blob);
+  return u.length > 1 + KID + 28 && u[0] === FILE_V ? b64(u.subarray(1, 1 + KID)) : null;
+}
+export const openFile = (key, blob, aad) => unseal(key, new Uint8Array(blob).subarray(1 + KID), aad);
 
 /* ---------- keys derived from a password and from a key exchange ---------- */
 async function passwordKey(keyring, password) {
@@ -57,7 +77,7 @@ async function boxKey(priv, pubRaw, epk, id) {
 }
 
 /* ---------- keyring ---------- */
-export const newKeyring = () => ({ v: 1, kdf: { salt: b64(random(16)), iterations: 600000 }, people: [] });
+export const newKeyring = () => ({ v: 1, kid: '', kdf: { salt: b64(random(16)), iterations: 600000 }, people: [] });
 
 // a new person: fresh key pair, private key sealed with their password (box and name are added by the caller)
 export async function newPerson(keyring, id, password) {
@@ -82,8 +102,9 @@ export async function boxFor(person, libraryRaw) {
 export async function signIn(keyring, password) {
   const key = await passwordKey(keyring, password);   // one slow derivation, then a cheap check per person
   for (const person of keyring.people) {
-    const pkcs8 = await unseal(key, unb64(person.priv), label.priv(person.id)).catch(() => null);
-    if (pkcs8) return { person, priv: await subtle.importKey('pkcs8', pkcs8, ECDH, false, ['deriveBits']) };
+    let pkcs8 = null;
+    try { pkcs8 = await unseal(key, unb64(person.priv), label.priv(person.id)); } catch (e) { continue; }   // not theirs (or a damaged entry)
+    return { person, priv: await subtle.importKey('pkcs8', pkcs8, ECDH, false, ['deriveBits']) };
   }
   return null;
 }
@@ -96,7 +117,11 @@ export async function libraryKey(keyring, id, priv) {
   return unseal(await boxKey(priv, epk, epk, id), unb64(person.box.ct), label.box(id));
 }
 
-export async function changePassword(keyring, person, oldPassword, newPassword) {
-  const pkcs8 = await unseal(await passwordKey(keyring, oldPassword), unb64(person.priv), label.priv(person.id));
-  person.priv = b64(await seal(await passwordKey(keyring, newPassword), pkcs8, label.priv(person.id)));
+// New password = new key pair. Re-sealing the old private key would not help: the old entry stays in
+// git history, and the old password would still open it and, through it, the current box.
+export async function replaceKeys(keyring, person, newPassword, libraryRaw) {
+  const fresh = await newPerson(keyring, person.id, newPassword);
+  person.pub = fresh.pub;
+  person.priv = fresh.priv;
+  person.box = await boxFor(person, libraryRaw);
 }

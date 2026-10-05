@@ -13,15 +13,21 @@
 (function (game) {
   // every game lives at <library>/<id>/, so the shelf is one level up
   var libraryUrl = new URL('../', location.href).href;
+  // The shelf leaves a mark when you open a game from it (docs/lib/lock.js). Only then is one step
+  // back the shelf; a game opened from a chat link goes to the shelf by address instead.
+  var fromShelf = false;
+  try { fromShelf = sessionStorage.getItem('ihroteka:shelf') === libraryUrl; sessionStorage.removeItem('ihroteka:shelf'); } catch (e) {}
+  var fallback = 0;
+  // if the game goes into the back/forward cache, the fallback must not fire when it comes back
+  addEventListener('pagehide', function () { clearTimeout(fallback); });
   window.ihroteka = Object.freeze({
     version: 1,
     game: Object.freeze(game),
     libraryUrl: libraryUrl,
     home: function () {
-      // came straight from the shelf: step back so the browser restores it instantly
-      if (document.referrer && document.referrer.split(/[?#]/)[0] === libraryUrl && history.length > 1) {
-        history.back();
-        setTimeout(function () { location.assign(libraryUrl); }, 500);   // nothing to go back to after all
+      if (fromShelf && history.length > 1) {
+        history.back();                              // the browser restores the shelf instantly
+        fallback = setTimeout(function () { location.assign(libraryUrl); }, 700);   // nothing to go back to after all
       } else location.assign(libraryUrl);
     }
   });

@@ -1,41 +1,68 @@
 // Repository model: where things live, the keyring, sealed files and game source archives.
+// Library code throws Problem for anything the user can fix; only cli.js prints and exits.
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as vault from '../../docs/lib/vault.js';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+export class Problem extends Error {}
+export const problem = msg => { throw new Problem(msg); };
+
+// IHROTEKA_ROOT lets tests run the tools against a scratch copy of the repository
+export const ROOT = path.resolve(process.env.IHROTEKA_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '../..'));
+const TOOLS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const P = {
   games: path.join(ROOT, 'games'),       // plaintext sources (local only)
   site: path.join(ROOT, 'docs'),         // published site
   vault: path.join(ROOT, 'vault'),       // encrypted sources
   keyring: path.join(ROOT, 'docs', 'keyring.json'),
-  template: path.join(ROOT, 'tools', 'templates', 'game.html'),
-  api: path.join(ROOT, 'tools', 'runtime', 'library-api.js')
+  template: path.join(TOOLS, 'templates', 'game.html'),
+  api: path.join(TOOLS, 'runtime', 'library-api.js')
 };
-export const rel = p => path.relative(ROOT, p);
+export const rel = p => path.relative(ROOT, p) || '.';
 export const exists = fs.existsSync;
 export const same = (a, b) => Buffer.from(a).equals(Buffer.from(b));
-export const fail = msg => { console.error('✗ ' + msg); process.exit(1); };
 export const homepage = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).homepage || '';
 
 export const gameIds = () => exists(P.games) ? fs.readdirSync(P.games).filter(id => exists(path.join(P.games, id, 'game.json'))).sort() : [];
 export const sourceIds = () => exists(P.vault) ? fs.readdirSync(P.vault).filter(f => f.endsWith('.bin')).map(f => f.slice(0, -4)).sort() : [];
+export const siteGames = () => exists(P.site) ? fs.readdirSync(P.site).filter(d => exists(path.join(P.site, d, 'game.bin'))).sort() : [];
 export const sitePath = (...p) => path.join(P.site, ...p);
 export const sourcePath = id => path.join(P.vault, id + '.bin');
 
-/* ---------- keyring & people ---------- */
-export const readKeyring = () => exists(P.keyring) ? JSON.parse(fs.readFileSync(P.keyring, 'utf8')) : fail('No ' + rel(P.keyring) + '. Start with `node tools/cli.js init <name> …`.');
-export const writeKeyring = kr => fs.writeFileSync(P.keyring, JSON.stringify(kr, null, 2) + '\n');
+// write next to the target, then rename: a crash never leaves a half-written file
+export function writeAtomic(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file + '.tmp', data);
+  fs.renameSync(file + '.tmp', file);
+}
 
-// → { kr, me, raw, key }: the keyring, who signed in, and the library key
+// refuse to touch encrypted files with uncommitted changes (the only backup is git)
+export function requireClean(...dirs) {
+  let out;
+  try { out = execFileSync('git', ['status', '--porcelain', '--', ...dirs.map(rel)], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
+  catch (e) { return; }                                  // not a git checkout: nothing to compare with
+  if (out.trim()) problem('Uncommitted changes in ' + dirs.map(rel).join(', ') + '. Commit or discard them first (git is the only backup of encrypted files).');
+}
+
+/* ---------- keyring & people ---------- */
+export function readKeyring() {
+  if (!exists(P.keyring)) problem('No ' + rel(P.keyring) + '. Start with `node tools/cli.js init <name> …`.');
+  return JSON.parse(fs.readFileSync(P.keyring, 'utf8'));
+}
+export const writeKeyring = kr => writeAtomic(P.keyring, JSON.stringify(kr, null, 2) + '\n');
+
+// → { kr, me, raw, key, kid }: the keyring, who signed in, and the library key
 export async function open(password) {
   const kr = readKeyring();
   const who = await vault.signIn(kr, password);
-  if (!who) fail('Wrong password.');
+  if (!who) problem('Wrong password.');
   const raw = await vault.libraryKey(kr, who.person.id, who.priv);
-  return { kr, me: who.person, raw, key: await vault.importKey(raw) };
+  const kid = await vault.keyId(raw);
+  if (kr.kid !== kid) problem('keyring.json is inconsistent: its key id does not match the library key.');
+  return { kr, me: who.person, raw, key: await vault.importKey(raw), kid };
 }
 export const nameOf = (key, p) => vault.unseal(key, vault.unb64(p.name), vault.label.name(p.id)).then(vault.text, () => '?');
 
@@ -54,47 +81,67 @@ export function makePassword() {
   while (s.length < 12) { const b = vault.random(1)[0]; if (b < abc.length * 8) s += abc[b % abc.length]; }
   return s.match(/.{4}/g).join('-');
 }
+export function checkNewPassword(pw) {
+  if (pw !== pw.trim()) problem('A password must not start or end with a space.');
+  if (pw.length < 12) problem('Too short: at least 12 characters. The keyring is public, so short passwords can be brute-forced.');
+}
 
 /* ---------- sealed files ---------- */
-// writes only when the plaintext changed, so unchanged builds leave git clean → true if written
-export async function writeSealed(file, data, aad, key) {
-  const plain = typeof data === 'string' ? Buffer.from(data) : data;
-  if (exists(file) && await vault.unseal(key, fs.readFileSync(file), aad).then(old => same(old, plain), () => false)) return false;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, await vault.seal(key, plain, aad));
-  return true;
-}
-export const readSealed = (file, aad, key) => vault.unseal(key, fs.readFileSync(file), aad);
-
 // every sealed file with its label
 export function sealedFiles() {
   const out = [];
   if (exists(sitePath('library.bin'))) out.push([sitePath('library.bin'), vault.label.library()]);
-  for (const id of fs.readdirSync(P.site)) if (exists(sitePath(id, 'game.bin'))) out.push([sitePath(id, 'game.bin'), vault.label.game(id)]);
+  for (const id of siteGames()) out.push([sitePath(id, 'game.bin'), vault.label.game(id)]);
   for (const id of sourceIds()) out.push([sourcePath(id), vault.label.source(id)]);
   return out;
 }
-
-// new library key for everyone in kr.people; every sealed file and name is re-encrypted
-export async function rotate(kr, key) {
-  const raw2 = vault.newLibraryKey(), key2 = await vault.importKey(raw2);
-  for (const [file, aad] of sealedFiles()) fs.writeFileSync(file, await vault.seal(key2, await readSealed(file, aad, key), aad));
-  for (const p of kr.people) {
-    const aad = vault.label.name(p.id);
-    p.name = vault.b64(await vault.seal(key2, await vault.unseal(key, vault.unb64(p.name), aad), aad));
-    p.box = await vault.boxFor(p, raw2);
+export function readSealed(file, aad, { key, kid }) {
+  const blob = fs.readFileSync(file);
+  if (vault.fileKid(blob) !== kid) problem(rel(file) + ' is sealed with another library key (stale checkout? run git pull).');
+  return vault.openFile(key, blob, aad);
+}
+// writes only when the content changed (equal(old, new) decides), so unchanged builds leave git clean → true if written
+export async function writeSealed(file, plain, aad, lib, equal = same) {
+  if (exists(file)) {
+    const blob = fs.readFileSync(file);
+    if (vault.fileKid(blob) === lib.kid) {
+      const old = await vault.openFile(lib.key, blob, aad).catch(() => null);
+      if (old && equal(old, plain)) return false;
+    }
   }
+  writeAtomic(file, await vault.sealFile(lib.key, lib.kid, plain, aad));
+  return true;
 }
 
-/* ---------- game sources: folder ⇄ one gzipped JSON archive ---------- */
+// New library key for everyone left in kr.people. Everything is decrypted first, so any failure happens
+// before a single write; then new files go to *.tmp and are renamed into place, the keyring last.
+export async function rotate(kr, lib) {
+  const files = [];
+  for (const [file, aad] of sealedFiles()) files.push([file, aad, await readSealed(file, aad, lib)]);
+  const names = [];
+  for (const p of kr.people) names.push(await vault.unseal(lib.key, vault.unb64(p.name), vault.label.name(p.id)));
+  const raw = vault.newLibraryKey(), next = { raw, key: await vault.importKey(raw), kid: await vault.keyId(raw) };
+  for (const [file, aad, plain] of files) fs.writeFileSync(file + '.tmp', await vault.sealFile(next.key, next.kid, plain, aad));
+  for (const [i, p] of kr.people.entries()) {
+    p.name = vault.b64(await vault.seal(next.key, names[i], vault.label.name(p.id)));
+    p.box = await vault.boxFor(p, raw);
+  }
+  kr.kid = next.kid;
+  for (const [file] of files) fs.renameSync(file + '.tmp', file);
+  writeKeyring(kr);
+  return next;
+}
+
+/* ---------- game sources: folder ⇄ one gzipped JSON archive (dotfiles are not included) ---------- */
 export function walk(dir, base = dir) {
   return fs.readdirSync(dir, { withFileTypes: true })
     .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
     .flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name), base) : [path.relative(base, path.join(dir, e.name)).split(path.sep).join('/')])
     .sort();
 }
-export function packSource(dir) {
-  const files = Object.fromEntries(walk(dir).map(f => [f, fs.readFileSync(path.join(dir, f)).toString('base64')]));
-  return zlib.gzipSync(JSON.stringify({ v: 1, files }), { level: 9 });
-}
-export const unpackSource = buf => Object.entries(JSON.parse(zlib.gunzipSync(buf)).files).map(([f, b64]) => [f, Buffer.from(b64, 'base64')]);
+const readFolder = dir => Object.fromEntries(walk(dir).map(f => [f, fs.readFileSync(path.join(dir, f)).toString('base64')]));
+export const packSource = dir => zlib.gzipSync(JSON.stringify({ v: 1, files: readFolder(dir) }), { level: 9 });
+export const unpackSource = buf => JSON.parse(zlib.gunzipSync(buf)).files;
+// archives are compared by their files, not by gzip bytes (those differ between zlib versions)
+const sameFiles = (a, b) => { const x = unpackSource(a), y = unpackSource(b); return JSON.stringify(x) === JSON.stringify(y); };
+export const writeSource = (id, lib) => writeSealed(sourcePath(id), packSource(path.join(P.games, id)), vault.label.source(id), lib, sameFiles);

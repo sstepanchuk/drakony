@@ -2,30 +2,42 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as esbuild from 'esbuild';
-import { P, rel, exists, fail, homepage, sourceIds, sitePath, sourcePath, walk } from './repo.js';
+import * as vault from '../../docs/lib/vault.js';
+import { P, rel, exists, problem, homepage, sourceIds, siteGames, sitePath, sourcePath, walk } from './repo.js';
+
+const RESERVED = new Set(['lib']);                     // top-level names the site itself uses
 
 /* ---------- manifest: games/<id>/game.json ---------- */
 const FIELDS = {
   title: 'name on the shelf and in the link preview',
   tagline: 'one line under the title on the shelf',
   description: 'page description',
-  image: '1200×630 PNG for the shelf and the link preview',
+  image: '1200×630 PNG next to game.json, e.g. preview.png',
   shareTitle: '?link preview title',
   shareDescription: '?link preview text',
   imageAlt: '?image description',
-  emoji: '?tab icon',
-  theme: '?browser theme color'
+  emoji: '?tab icon (one emoji)',
+  theme: '?browser theme color, e.g. #e4e2f0'
+};
+const FORMAT = {
+  image: v => /^[\w-]+\.png$/.test(v),
+  emoji: v => [...v].length <= 4 && !/[\x00-\x7f]/.test(v),
+  theme: v => /^#[0-9a-f]{3,8}$/i.test(v)
 };
 export function readManifest(id) {
   const dir = path.join(P.games, id), file = rel(path.join(dir, 'game.json'));
-  if (!/^[a-z0-9-]+$/.test(id)) fail('games/' + id + ': folder name must be lowercase letters, digits and dashes (it becomes the URL)');
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id) || RESERVED.has(id)) problem('games/' + id + ': the folder name becomes the URL, so use lowercase letters, digits and dashes (and not ' + [...RESERVED].join(', ') + ')');
   let g;
-  try { g = JSON.parse(fs.readFileSync(path.join(dir, 'game.json'), 'utf8')); } catch (e) { fail(file + ': ' + e.message); }
-  for (const k of Object.keys(g)) if (!(k in FIELDS)) fail(file + ': unknown field "' + k + '"');
+  try { g = JSON.parse(fs.readFileSync(path.join(dir, 'game.json'), 'utf8').replace(/^\uFEFF/, '')); }
+  catch (e) { problem(file + ': ' + e.message); }
+  for (const k of Object.keys(g)) if (!(k in FIELDS)) problem(file + ': unknown field "' + k + '"');
   for (const [k, about] of Object.entries(FIELDS)) {
-    if (!about.startsWith('?') && !(typeof g[k] === 'string' && g[k].trim())) fail(file + ': "' + k + '" is required (' + about + ')');
+    const optional = about.startsWith('?');
+    if (g[k] === undefined && optional) continue;
+    if (typeof g[k] !== 'string' || !g[k].trim()) problem(file + ': "' + k + '" must be a non-empty string (' + about.replace('?', '') + ')');
+    if (FORMAT[k] && !FORMAT[k](g[k])) problem(file + ': "' + k + '" has an unexpected value (' + about.replace('?', '') + ')');
   }
-  for (const f of ['index.html', g.image]) if (!exists(path.join(dir, f))) fail('games/' + id + '/' + f + ' not found');
+  for (const f of ['index.html', g.image]) if (!exists(path.join(dir, f))) problem('games/' + id + '/' + f + ' not found');
   return g;
 }
 
@@ -35,64 +47,101 @@ export function withLibraryApi(html, id, g) {
     .replace(/^\/\*[\s\S]*?\*\/\s*/, '')
     .replace('__GAME__', () => JSON.stringify({ id, title: g.title }).replace(/</g, '\\u003c'));
   const at = /<meta charset[^>]*>/i.test(html) ? /<meta charset[^>]*>/i : /<head>/i;   // charset must stay near the top
-  if (!at.test(html)) fail('games/' + id + '/index.html has no <head>');
+  if (!at.test(html)) problem('games/' + id + '/index.html has no <head>');
   return html.replace(at, m => m + '\n<script>' + api.trim() + '</script>');
 }
 
-/* ---------- one self-contained page: styles and module scripts inlined ---------- */
+/* ---------- one self-contained page ---------- */
+// Styles and module scripts are bundled inline; images, fonts and sounds they use become data: URLs.
+// Anything else the page points to by a relative URL would not exist on the site, so the build stops.
+const ASSETS = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.json': 'application/json' };
+const loader = Object.fromEntries(Object.keys(ASSETS).filter(e => e !== '.json').map(e => [e, 'dataurl']));
+const attr = (tag, name) => tag.match(new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i'))?.slice(1).find(v => v !== undefined);
+const local = url => url && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(url);
+const dataUrl = file => 'data:' + ASSETS[path.extname(file).toLowerCase()] + ';base64,' + fs.readFileSync(file).toString('base64');
+
 export async function bundleGame(id, g) {
-  const dir = path.join(P.games, id);
-  let html = withLibraryApi(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), id, g);
-  for (const [tag, href] of html.matchAll(/<link rel="stylesheet" href="([^":]+)">/g)) {
-    const { code } = await esbuild.transform(fs.readFileSync(path.join(dir, href), 'utf8'), { loader: 'css', minify: true, charset: 'utf8' });
-    html = html.replace(tag, () => '<style>' + code.trim() + '</style>');
+  const dir = path.join(P.games, id), where = 'games/' + id + '/index.html';
+  let html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8').replace(/^\uFEFF/, '');
+  if (!/^\s*<!doctype html>/i.test(html)) problem(where + ' must start with <!doctype html> (without it the page renders in quirks mode)');
+  html = withLibraryApi(html, id, g);
+  const build = async (entry, extra) => (await esbuild.build({ entryPoints: [path.join(dir, entry)], bundle: true, minify: true, write: false, charset: 'utf8',
+    legalComments: 'none', logLevel: 'silent', loader, ...extra }).catch(e => problem(where + ': ' + (e.errors?.[0]?.text || e.message)))).outputFiles[0].text.trim();
+
+  for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+    if (!/\brel\s*=\s*["']?stylesheet/i.test(tag) || !local(attr(tag, 'href'))) continue;
+    const css = await build(attr(tag, 'href'), {});
+    html = html.replace(tag, () => '<style>' + css + '</style>');
   }
-  for (const [tag, src] of html.matchAll(/<script type="module" src="([^":]+)"><\/script>/g)) {
-    const { outputFiles: [out] } = await esbuild.build({ entryPoints: [path.join(dir, src)], bundle: true, format: 'iife', minify: true, write: false, target: 'es2020', charset: 'utf8', legalComments: 'none', logLevel: 'silent' });
-    if (/<\/script/i.test(out.text)) fail('games/' + id + ': the bundle contains "</script" and cannot be inlined');
-    html = html.replace(tag, () => '<script>' + out.text.trim() + '</script>');
+  for (const tag of html.match(/<script\b[^>]*>\s*<\/script>/gi) || []) {
+    const src = attr(tag, 'src');
+    if (!local(src)) continue;
+    if (!/\btype\s*=\s*["']?module/i.test(tag)) problem(where + ': <script src="' + src + '"> must be type="module" to be bundled');
+    const js = await build(src, { format: 'esm', target: 'es2020' });
+    if (/<\/script/i.test(js)) problem(where + ': the bundle contains "</script" and cannot be inlined');
+    html = html.replace(tag, () => '<script type="module">' + js + '</script>');   // still a module: runs after the page is parsed, as before
   }
+  // remaining relative src/href: inline known assets, refuse everything else
+  html = html.replace(/(\s(?:src|href)\s*=\s*)(["'])([^"']*)\2/gi, (m, pre, q, url) => {
+    if (!local(url)) return m;
+    const file = path.join(dir, url.split(/[?#]/)[0]);
+    if (!file.startsWith(dir + path.sep) || !exists(file) || !ASSETS[path.extname(file).toLowerCase()]) problem(where + ': "' + url + '" would not exist on the site (only styles, module scripts and media files are bundled)');
+    return pre + q + dataUrl(file) + q;
+  });
   return html;
 }
 
 /* ---------- public game page with the lock and the link preview ---------- */
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export function gamePage(id, g) {
+  const base = homepage();
+  if (!/^https:\/\/[^/]+\/(.*\/)?$/.test(base.replace(/\/?$/, '/'))) problem('package.json "homepage" must be the absolute https URL of the site (link previews need it)');
   const vals = {
     title: g.title, description: g.description, image: g.image,
     shareTitle: g.shareTitle || g.title, shareDescription: g.shareDescription || g.description, imageAlt: g.imageAlt || g.title,
-    imageUrl: homepage().replace(/\/?$/, '/') + id + '/' + g.image, emoji: g.emoji || '🎮', theme: g.theme || '#e4e2f0'
+    imageUrl: base.replace(/\/?$/, '/') + id + '/' + g.image, emoji: g.emoji || '🎮', theme: g.theme || '#e4e2f0'
   };
   return fs.readFileSync(P.template, 'utf8')
     .replace('{{idJson}}', JSON.stringify(id))
-    .replace(/\{\{(\w+)\}\}/g, (_, k) => k in vals ? esc(vals[k]) : fail('Template: unknown field ' + k));
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => k in vals ? esc(vals[k]) : problem('Template: unknown field ' + k));
 }
 
-/* ---------- password-free site validation (also run by CI) → list of problems ---------- */
+/* ---------- password-free site validation (also run by CI) → { problems, games, people } ---------- */
+const SITE_FILES = new Set(['index.html', 'keyring.json', 'library.bin', 'lib/lock.js', 'lib/vault.js', 'lib/keystore.js', 'lib/style.css']);
 export function checkSite() {
   const problems = [], bad = msg => problems.push(msg);
-  const sealed = f => exists(f) && fs.statSync(f).size > 28;   // iv (12) + tag (16) + payload
   let kr = null;
   try { kr = JSON.parse(fs.readFileSync(P.keyring, 'utf8')); } catch (e) { bad(rel(P.keyring) + ': ' + e.message); }
   if (kr) {
-    if (kr.v !== 1 || !kr.kdf?.salt || !(kr.kdf.iterations >= 100000)) bad('keyring.json: invalid header');
+    if (kr.v !== 1 || !kr.kid || !kr.kdf?.salt || !(kr.kdf.iterations >= 100000)) bad('keyring.json: invalid header');
     if (!kr.people?.length) bad('keyring.json: no people');
     for (const p of kr.people || []) if (!(p.id && p.pub && p.priv && p.name && p.box?.epk && p.box?.ct)) bad('keyring.json: incomplete entry ' + (p.id || '?'));
   }
-  if (!sealed(sitePath('library.bin'))) bad('missing docs/library.bin');
-  for (const f of ['index.html', 'lib/lock.js', 'lib/vault.js', 'lib/keystore.js', 'lib/style.css']) if (!exists(sitePath(f))) bad('missing docs/' + f);
-  const games = fs.readdirSync(P.site).filter(d => exists(sitePath(d, 'game.bin')));
+  // every sealed file must be sealed with the current library key
+  const sealedWithCurrentKey = (file, label) => {
+    if (!exists(file)) return bad('missing ' + rel(file));
+    const kid = vault.fileKid(fs.readFileSync(file));
+    if (!kid) bad(rel(file) + ': not a sealed file');
+    else if (kr && kid !== kr.kid) bad(rel(file) + ': sealed with an old library key (' + label + ' — rebuild after git pull)');
+  };
+  for (const f of SITE_FILES) if (!f.endsWith('.bin') && !exists(sitePath(f))) bad('missing docs/' + f);
+  sealedWithCurrentKey(sitePath('library.bin'), 'shelf');
+  const games = siteGames();
   if (!games.length) bad('no games in docs/');
   for (const id of games) {
-    if (!sealed(sitePath(id, 'game.bin'))) bad('docs/' + id + '/game.bin is empty');
-    if (!exists(sourcePath(id))) bad('vault/' + id + '.bin: missing encrypted sources');
-    if (!exists(sitePath(id, 'index.html'))) { bad('missing docs/' + id + '/index.html'); continue; }
-    const html = fs.readFileSync(sitePath(id, 'index.html'), 'utf8'), img = html.match(/class="cover" src="([^"]+)"/)?.[1];
+    sealedWithCurrentKey(sitePath(id, 'game.bin'), id);
+    sealedWithCurrentKey(sourcePath(id), id + ' sources');
+    const page = sitePath(id, 'index.html');
+    if (!exists(page)) { bad('missing docs/' + id + '/index.html'); continue; }
+    const html = fs.readFileSync(page, 'utf8'), img = html.match(/class="cover" src="([^"]+)"/)?.[1];
+    if (!html.includes('bootGame(')) bad('docs/' + id + '/index.html is not a library game page');
     if (/\{\{\w+\}\}/.test(html)) bad('docs/' + id + '/index.html: unfilled template');
     if (!img || !exists(sitePath(id, img))) bad('docs/' + id + ': missing image ' + (img || ''));
   }
   for (const id of sourceIds()) if (!games.includes(id)) bad('vault/' + id + '.bin exists but docs/ has no such game');
-  // plaintext game files must never reach the site
-  for (const f of walk(P.site)) if (/\.(m?js|css|html)$/.test(f) && !/^(index\.html|lib\/[\w-]+\.(js|css)|[\w-]+\/index\.html)$/.test(f)) bad('docs/' + f + ': looks like a plaintext game file');
+  // only known files may be published: anything else could be a plaintext leak
+  const allowed = f => SITE_FILES.has(f) || (/^([\w-]+)\/(index\.html|game\.bin|[\w-]+\.png)$/.test(f) && games.includes(f.split('/')[0]));
+  for (const f of walk(P.site)) if (!allowed(f)) bad('docs/' + f + ': unexpected file (only game pages, sealed files and cover images are published)');
   return { problems, games: games.length, people: kr?.people?.length || 0 };
 }

@@ -8,14 +8,14 @@ import zlib from 'node:zlib';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
-import * as V from '../site/lib/vault.js';
+import * as V from '../docs/lib/vault.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const P = {
   games: path.join(ROOT, 'games'),
-  site: path.join(ROOT, 'site'),
+  site: path.join(ROOT, 'docs'),
   vault: path.join(ROOT, 'vault'),
-  keyring: path.join(ROOT, 'site', 'keyring.json'),
+  keyring: path.join(ROOT, 'docs', 'keyring.json'),
   template: path.join(ROOT, 'tools', 'templates', 'game.html')
 };
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -146,8 +146,8 @@ const commands = {
     console.log(`Ігротека: команди
 
   npm run unlock                 розшифрувати вихідний код ігор у games/ (щоб редагувати)
-  npm run dev [-- site]          локальний сервер: games/ (або готовий сайт site/)
-  npm run build                  зібрати ігри, зашифрувати й покласти в site/ і vault/
+  npm run dev [-- docs]          локальний сервер: games/ (або готовий сайт docs/)
+  npm run build                  зібрати ігри, зашифрувати й покласти в docs/ і vault/
 
   npm run user -- list           хто має доступ
   npm run user -- add <ім'я>     додати людину (пароль буде створено й показано один раз)
@@ -247,7 +247,7 @@ const commands = {
       }
       kr.people = keep;
       writeKeyring(kr);
-      console.log('✓ ' + name + ' більше не має доступу. Ключ бібліотеки змінено, файли перешифровано — закоміть site/ і vault/.');
+      console.log('✓ ' + name + ' більше не має доступу. Ключ бібліотеки змінено, файли перешифровано — закоміть docs/ і vault/.');
       return;
     }
     if (sub === 'passwd') {
@@ -261,15 +261,15 @@ const commands = {
       else if (await ask('Ще раз: ', true) !== pw) fail('Паролі не збігаються.');
       await V.repassword(who.person, old, pw, kr);
       writeKeyring(kr);
-      console.log('✓ Пароль змінено. Закоміть site/keyring.json.');
+      console.log('✓ Пароль змінено. Закоміть docs/keyring.json.');
       return;
     }
     fail('npm run user -- list | add <ім’я> | remove <ім’я> | passwd');
   },
 
   async dev(what = 'games', port = '8000') {
-    const dir = what === 'site' ? P.site : P.games;
-    if (!exists(dir)) fail('Немає ' + rel(dir) + (what === 'site' ? '' : ' (спершу npm run unlock)'));
+    const dir = what === 'docs' ? P.site : P.games;
+    if (!exists(dir)) fail('Немає ' + rel(dir) + (what === 'docs' ? '' : ' (спершу npm run unlock)'));
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.bin': 'application/octet-stream' };
     http.createServer((req, res) => {
       let p = path.join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
@@ -280,7 +280,7 @@ const commands = {
       fs.createReadStream(p).pipe(res);
     }).listen(+port, () => {
       console.log('http://localhost:' + port + '/');
-      if (what !== 'site') for (const id of gameIds()) console.log('  ' + id + ': http://localhost:' + port + '/' + id + '/');
+      if (what !== 'docs') for (const id of gameIds()) console.log('  ' + id + ': http://localhost:' + port + '/' + id + '/');
     });
   }
 };

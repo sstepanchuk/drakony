@@ -1,66 +1,36 @@
-<div align="center">
+# 🎲 Ihroteka
 
-# 🎲 Ігротека
+A tiny private game library. Password-protected, end-to-end encrypted, hosted on GitHub Pages.
 
-**Наша маленька бібліотека ігор у браузері. Вхід лише за паролем, усе зашифровано.**
+**[Open](https://sstepanchuk.github.io/drakony/)** · [🐉 Two Dragons](https://sstepanchuk.github.io/drakony/dragons/)
 
-[Відкрити](https://sstepanchuk.github.io/drakony/) · [🐉 Два дракони](https://sstepanchuk.github.io/drakony/dragons/)
+## How it works
 
-</div>
+- Games and their sources are stored only encrypted (AES-256-GCM).
+- Each person has their own password and ECDH P-256 key pair; the password unlocks the private key, which unlocks the library key.
+- Removing someone rotates the library key and re-encrypts everything.
+- Every game has its own public link preview; the game itself opens only after sign-in.
 
-<p align="center"><img src="site/dragons/preview.png" width="600" alt="Два дракони"></p>
-
-## Ігри
-
-| | Гра | |
-|---|---|---|
-| 🐉 | **Два дракони** | Гра на двох за посиланням: збирай шматочки, рости й обжени іншого дракона. |
-
-## Як це працює
-
-- Репозиторій публічний, але ігри й їхній код лежать тут **лише зашифрованими** (AES-256-GCM).
-- У кожної людини **свій пароль** і своя пара ключів (ECDH P-256). Пароль відмикає твій приватний ключ, а він — ключ бібліотеки.
-- Людину можна додати чи прибрати, не знаючи чужих паролів. Після видалення ключ бібліотеки змінюється, і все перешифровується.
-- Браузер запам'ятовує ключ так, що його не можна витягти, тож пароль вводиш один раз на пристрої. Сам пароль не зберігається.
-- У кожної гри своє посилання з власною карткою для Telegram. Картку видно всім, саму гру — лише після входу.
-
-## Будова
+## Layout
 
 ```
-site/          сайт, який публікує GitHub Pages
-  index.html     полиця з іграми
-  <гра>/         відкрита сторінка гри + game.bin (зашифрована гра)
-  keyring.json   публічні ключі й «скриньки» з ключем бібліотеки
-  lib/           шифрування й замок (працюють і в браузері, і в Node)
-vault/         зашифрований вихідний код ігор
-games/         відкритий код (лише локально, в .gitignore)
-tools/cli.js   збирання, шифрування, керування людьми
+docs/    published site (GitHub Pages → main, /docs)
+vault/   encrypted game sources
+games/   plaintext sources (local only, git-ignored)
+tools/   build & key management
 ```
 
-## Команди
+## Usage
 
 ```sh
 npm install
-npm run unlock               # розшифрувати код ігор у games/
-npm run dev                  # http://localhost:8000/dragons/ — гра з вихідних файлів
-npm run build                # зібрати, зашифрувати, оновити site/ і vault/
+npm run unlock              # decrypt sources into games/
+npm run dev                 # serve games/ at localhost:8000
+npm run build               # bundle, encrypt, update docs/ and vault/
 
-npm run user -- list         # хто має доступ
-npm run user -- add Оля      # додати людину (пароль створиться й покажеться один раз)
-npm run user -- remove Оля   # прибрати людину
-npm run user -- passwd       # змінити свій пароль
+npm run user -- list | add <name> | remove <name> | passwd
 ```
 
-Пароль можна передати змінною `VAULT_PASSWORD`.
+Set `VAULT_PASSWORD` to skip the prompt.
 
-## Нова гра
-
-1. Тека `games/<id>/`: `index.html`, `game.json` (назва, опис, картка), `preview.png` 1200×630.
-2. Скрипти — звичайні ES-модулі (`<script type="module">`), стилі — `<link rel="stylesheet">`.
-   Під час збирання все вбудовується в одну сторінку й шифрується.
-3. `npm run build`, коміт, пуш.
-
-## Публікація
-
-Після пушу в `main` сайт публікує GitHub Actions. Разово треба ввімкнути:
-**Settings → Pages → Source: GitHub Actions**.
+**New game:** add `games/<id>/` with `index.html` (ES modules), `game.json` and a 1200×630 `preview.png`, then `npm run build`.

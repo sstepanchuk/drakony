@@ -147,6 +147,7 @@ const commands = {
 
   npm run unlock                 розшифрувати вихідний код ігор у games/ (щоб редагувати)
   npm run dev [-- docs]          локальний сервер: games/ (або готовий сайт docs/)
+  npm run check                  перевірити docs/ перед публікацією (без пароля)
   npm run build                  зібрати ігри, зашифрувати й покласти в docs/ і vault/
 
   npm run user -- list           хто має доступ
@@ -265,6 +266,37 @@ const commands = {
       return;
     }
     fail('npm run user -- list | add <ім’я> | remove <ім’я> | passwd');
+  },
+
+  // Перевірка без пароля: сайт цілий, нічого відкритого не просочилось. Її запускає й деплой.
+  async check() {
+    const problems = [], bad = msg => problems.push(msg);
+    let kr = null;
+    try { kr = JSON.parse(fs.readFileSync(P.keyring, 'utf8')); } catch (e) { bad(rel(P.keyring) + ': ' + e.message); }
+    if (kr) {
+      if (kr.v !== 1 || !kr.kdf || !kr.kdf.salt || !(kr.kdf.iterations >= 100000)) bad('keyring.json: неправильний заголовок');
+      if (!Array.isArray(kr.people) || !kr.people.length) bad('keyring.json: немає жодної людини');
+      else for (const p of kr.people) if (!p.id || !p.pub || !p.priv || !p.name || !p.box || !p.box.epk || !p.box.ct) bad('keyring.json: неповний запис ' + (p.id || '?'));
+    }
+    const sealed = f => exists(f) && fs.statSync(f).size > 28;   // iv (12) + тег (16) + хоч щось
+    if (!sealed(path.join(P.site, 'library.bin'))) bad('немає docs/library.bin');
+    for (const page of ['index.html', 'lib/lock.js', 'lib/vault.js', 'lib/keystore.js', 'lib/style.css']) if (!exists(path.join(P.site, page))) bad('немає docs/' + page);
+    const games = fs.readdirSync(P.site).filter(d => exists(path.join(P.site, d, 'game.bin')));
+    for (const id of games) {
+      const html = exists(path.join(P.site, id, 'index.html')) ? fs.readFileSync(path.join(P.site, id, 'index.html'), 'utf8') : '';
+      if (!html) { bad('немає docs/' + id + '/index.html'); continue; }
+      if (!sealed(path.join(P.site, id, 'game.bin'))) bad('docs/' + id + '/game.bin порожній');
+      if (/\{\{\w+\}\}/.test(html)) bad('docs/' + id + '/index.html: незаповнений шаблон');
+      const img = (html.match(/class="cover" src="([^"]+)"/) || [])[1];
+      if (!img || !exists(path.join(P.site, id, img))) bad('docs/' + id + ': немає картинки ' + (img || ''));
+      if (!exists(path.join(P.vault, id + '.bin'))) bad('vault/' + id + '.bin: немає зашифрованого коду гри');
+    }
+    for (const id of sourceIds()) if (!games.includes(id)) bad('vault/' + id + '.bin є, а гри в docs/ немає');
+    if (!games.length) bad('у docs/ немає жодної гри');
+    // відкритий код ігор не має потрапити ні в репозиторій, ні на сайт
+    for (const f of walk(P.site)) if (/\.(m?js|css|html)$/.test(f) && !/^(index\.html|lib\/[\w-]+\.(js|css)|[\w-]+\/index\.html)$/.test(f)) bad('docs/' + f + ': схоже на відкритий файл гри');
+    if (problems.length) { for (const p of problems) console.error('✗ ' + p); process.exit(1); }
+    console.log('✓ docs/ у порядку: ігор ' + games.length + ', людей ' + kr.people.length);
   },
 
   async dev(what = 'games', port = '8000') {

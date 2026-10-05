@@ -14,7 +14,7 @@ A tiny private game library. Password-protected, end-to-end encrypted, hosted on
 ## Layout
 
 ```
-docs/    published site (GitHub Pages → main, /docs)
+docs/    published site (deployed by GitHub Actions)
 vault/   encrypted game sources
 games/   plaintext sources (local only, git-ignored)
 tools/   build & key management
@@ -27,6 +27,7 @@ npm install
 npm run unlock              # decrypt sources into games/
 npm run dev                 # serve games/ at localhost:8000
 npm run build               # bundle, encrypt, update docs/ and vault/
+npm run check               # validate docs/ (runs in CI before every deploy)
 
 npm run user -- list | add <name> | remove <name> | passwd
 ```
@@ -34,3 +35,5 @@ npm run user -- list | add <name> | remove <name> | passwd
 Set `VAULT_PASSWORD` to skip the prompt.
 
 **New game:** add `games/<id>/` with `index.html` (ES modules), `game.json` and a 1200×630 `preview.png`, then `npm run build`.
+
+**Deploy:** every push to `main` is checked and published by GitHub Actions (Settings → Pages → Source: *GitHub Actions*).

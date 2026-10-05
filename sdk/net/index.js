@@ -8,12 +8,11 @@
 // hello (guest → host), hi (host → guest: linked), moved (another tab of yours took your seat),
 // bye (left; final if menu=1), rtc (direct link signalling), d (game data through the brokers).
 import { me, samePlayer, roomTopic } from './config.js';
-import { loadTransport, openBrokers, closeBrokers, pubOn } from './brokers.js';
+import { closeBrokers, loadTransport, openBrokers, pubOn } from './brokers.js';
 import { closeRtc, onRtc } from './rtc.js';
 import { deliver, send, lag, stats, diag, refresh, resetPaths, watch, setWeak, kick, keepDirectAlive } from './link.js';
 
 export { newRoomCode, validRoomCode } from './config.js';
-export { loadTransport };
 // start loading the transport early (e.g. while the player is still in the menu); never throws
 export const preload = () => { loadTransport().catch(() => {}); };
 

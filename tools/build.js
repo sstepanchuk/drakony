@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as esbuild from 'esbuild';
-import * as vault from '../../docs/lib/vault.js';
+import * as vault from '../sdk/vault/index.js';
 import { P, rel, exists, problem, homepage, sourceIds, siteGames, sitePath, sourcePath, walk } from './repo.js';
 
 const RESERVED = new Set(['lib']);                     // top-level names the site itself uses
@@ -41,11 +41,11 @@ export function readManifest(id) {
   return g;
 }
 
-/* ---------- library API (tools/runtime/library-api.js), first thing in <head> ---------- */
+/* ---------- library API (@ihroteka/api), first thing in <head> ---------- */
 export function withLibraryApi(html, id, g) {
-  const api = fs.readFileSync(P.api, 'utf8')
+  const api = fs.readFileSync(path.join(P.sdk, 'api', 'index.js'), 'utf8')
     .replace(/^\/\*[\s\S]*?\*\/\s*/, '')
-    .replace('__GAME__', () => JSON.stringify({ id, title: g.title }).replace(/</g, '\\u003c'));
+    .replace('/* GAME */ null', () => JSON.stringify({ id, title: g.title }).replace(/</g, '\\u003c'));
   const at = /<meta charset[^>]*>/i.test(html) ? /<meta charset[^>]*>/i : /<head>/i;   // charset must stay near the top
   if (!at.test(html)) problem('games/' + id + '/index.html has no <head>');
   return html.replace(at, m => m + '\n<script>' + api.trim() + '</script>');
@@ -65,13 +65,20 @@ const attr = (tag, name) => tag.match(new RegExp('\\s' + name + '\\s*=\\s*(?:"([
 const local = url => url && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(url);
 const dataUrl = file => 'data:' + ASSETS[path.extname(file).toLowerCase()] + ';base64,' + fs.readFileSync(file).toString('base64');
 
+// one entry point → one minified file (also used for the site's own script and stylesheet)
+async function esbuildText(entry, extra, where) {
+  const r = await esbuild.build({ entryPoints: [entry], bundle: true, minify: true, write: false, charset: 'utf8',
+    legalComments: 'none', logLevel: 'silent', loader, alias: sdkModules(), ...extra }).catch(e => problem(where + ': ' + (e.errors?.[0]?.text || e.message)));
+  return r.outputFiles[0].text.trim();
+}
+const JS = { format: 'esm', target: 'es2020' };
+
 export async function bundleGame(id, g) {
   const dir = path.join(P.games, id), where = 'games/' + id + '/index.html';
   let html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8').replace(/^\uFEFF/, '');
   if (!/^\s*<!doctype html>/i.test(html)) problem(where + ' must start with <!doctype html> (without it the page renders in quirks mode)');
   html = withLibraryApi(html, id, g);
-  const build = async (entry, extra) => (await esbuild.build({ entryPoints: [path.join(dir, entry)], bundle: true, minify: true, write: false, charset: 'utf8',
-    legalComments: 'none', logLevel: 'silent', loader, alias: sdkModules(), ...extra }).catch(e => problem(where + ': ' + (e.errors?.[0]?.text || e.message)))).outputFiles[0].text.trim();
+  const build = (entry, extra) => esbuildText(path.join(dir, entry), extra, where);
 
   for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
     if (!/\brel\s*=\s*["']?stylesheet/i.test(tag) || !local(attr(tag, 'href'))) continue;
@@ -82,7 +89,7 @@ export async function bundleGame(id, g) {
     const src = attr(tag, 'src');
     if (!local(src)) continue;
     if (!/\btype\s*=\s*["']?module/i.test(tag)) problem(where + ': <script src="' + src + '"> must be type="module" to be bundled');
-    const js = await build(src, { format: 'esm', target: 'es2020' });
+    const js = await build(src, JS);
     if (/<\/script/i.test(js)) problem(where + ': the bundle contains "</script" and cannot be inlined');
     html = html.replace(tag, () => '<script type="module">' + js + '</script>');   // still a module: runs after the page is parsed, as before
   }
@@ -106,14 +113,25 @@ export function gamePage(id, g) {
     shareTitle: g.shareTitle || g.title, shareDescription: g.shareDescription || g.description, imageAlt: g.imageAlt || g.title,
     imageUrl: base.replace(/\/?$/, '/') + id + '/' + g.image, emoji: g.emoji || '🎮', theme: g.theme || '#e4e2f0'
   };
-  return fs.readFileSync(P.template, 'utf8')
+  return fs.readFileSync(path.join(P.sdk, 'shelf', 'game.html'), 'utf8')
     .replace('{{idJson}}', JSON.stringify(id))
     .replace(/\{\{(\w+)\}\}/g, (_, k) => k in vals ? esc(vals[k]) : problem('Template: unknown field ' + k));
 }
 
+/* ---------- the site's own files, built from @ihroteka/shelf: path in docs/ → contents ---------- */
+export async function shelfFiles() {
+  const dir = path.join(P.sdk, 'shelf');
+  return {
+    'index.html': fs.readFileSync(path.join(dir, 'index.html'), 'utf8'),
+    'lib/ihroteka.js': await esbuildText(path.join(dir, 'index.js'), JS, 'sdk/shelf') + '\n',
+    'lib/ihroteka.css': await esbuildText(path.join(dir, 'style.css'), {}, 'sdk/shelf') + '\n'
+  };
+}
+
 /* ---------- password-free site validation (also run by CI) → { problems, games, people } ---------- */
-const SITE_FILES = new Set(['index.html', 'keyring.json', 'library.bin', 'lib/lock.js', 'lib/vault.js', 'lib/keystore.js', 'lib/style.css']);
-export function checkSite() {
+export async function checkSite() {
+  const shelf = await shelfFiles();
+  const SITE_FILES = new Set(['keyring.json', 'library.bin', ...Object.keys(shelf)]);
   const problems = [], bad = msg => problems.push(msg);
   let kr = null;
   try { kr = JSON.parse(fs.readFileSync(P.keyring, 'utf8')); } catch (e) { bad(rel(P.keyring) + ': ' + e.message); }
@@ -129,7 +147,10 @@ export function checkSite() {
     if (!kid) bad(rel(file) + ': not a sealed file');
     else if (kr && kid !== kr.kid) bad(rel(file) + ': sealed with an old library key (' + label + ' — rebuild after git pull)');
   };
-  for (const f of SITE_FILES) if (!f.endsWith('.bin') && !exists(sitePath(f))) bad('missing docs/' + f);
+  for (const [f, data] of Object.entries(shelf)) {
+    if (!exists(sitePath(f))) bad('missing docs/' + f);
+    else if (fs.readFileSync(sitePath(f), 'utf8') !== data) bad('docs/' + f + ' is out of date with sdk/shelf (npm run build)');
+  }
   sealedWithCurrentKey(sitePath('library.bin'), 'shelf');
   const games = siteGames();
   if (!games.length) bad('no games in docs/');

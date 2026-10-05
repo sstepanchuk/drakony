@@ -1,5 +1,5 @@
 /* =====================================================================
-   LIBRARY ENCRYPTION — runs unchanged in the browser and in Node (Web Crypto).
+   @ihroteka/vault — library encryption. Runs unchanged in the browser and in Node (Web Crypto).
 
    - All content (games, their sources, the game list) is sealed with one library key (AES-256-GCM).
    - Each person has an ECDH P-256 key pair. keyring.json holds, per person, a "box" with the library

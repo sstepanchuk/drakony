@@ -14,11 +14,15 @@ A tiny private game library. Password-protected, end-to-end encrypted, hosted on
 ## Layout
 
 ```
-docs/    published site (deployed by GitHub Actions)
+sdk/     the Ihroteka itself, as @ihroteka/<name> modules
+  vault    encryption: keyring, sealed files (browser and Node)
+  shelf    the site: sign-in, remembered device, shelf and game page templates
+  api      window.ihroteka, injected into every game
+  net      two-player rooms for games
+tools/   cli.js (commands) · repo.js (keys, sealed files) · build.js (bundling, checks) · dev.js (local server)
+docs/    the published site — build output, never edited by hand
 vault/   encrypted game sources
 games/   plaintext sources (local only, git-ignored)
-sdk/     shared libraries for games, imported as @ihroteka/<name> (net: multiplayer rooms)
-tools/   cli.js (commands) · lib/repo.js (keys, sealed files) · lib/build.js (bundling, checks) · lib/dev.js
 ```
 
 ## Usage

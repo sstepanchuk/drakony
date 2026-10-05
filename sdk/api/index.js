@@ -1,6 +1,6 @@
-/* Library API, available to every game as `window.ihroteka`.
-   The build (and `npm run dev`) inlines this script at the top of the game's <head>,
-   before any game code runs. __GAME__ is replaced with { id, title } from game.json.
+/* @ihroteka/api — the library, as every game sees it: `window.ihroteka`.
+   Not imported: the build (and `npm run dev`) inlines this script at the top of the game's <head>,
+   before any game code runs, with { id, title } from game.json in place of GAME.
 
    Contract (version 1):
      ihroteka.version     1
@@ -11,9 +11,10 @@
    Games must treat the API as optional: when a game page is opened on its own
    (no library around it), `window.ihroteka` is undefined. */
 (function (game) {
+  if (!game) return;
   // every game lives at <library>/<id>/, so the shelf is one level up
   var libraryUrl = new URL('../', location.href).href;
-  // The shelf leaves a mark when you open a game from it (docs/lib/lock.js). Only then is one step
+  // The shelf leaves a mark when you open a game from it (@ihroteka/shelf). Only then is one step
   // back the shelf; a game opened from a chat link goes to the shelf by address instead.
   var fromShelf = false;
   try { fromShelf = sessionStorage.getItem('ihroteka:shelf') === libraryUrl; sessionStorage.removeItem('ihroteka:shelf'); } catch (e) {}
@@ -31,4 +32,4 @@
       } else location.assign(libraryUrl);
     }
   });
-})(__GAME__);
+})(/* GAME */ null);

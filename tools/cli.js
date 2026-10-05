@@ -3,10 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import * as vault from '../docs/lib/vault.js';
-import * as repo from './lib/repo.js';
-import { readManifest, bundleGame, gamePage, checkSite } from './lib/build.js';
-import { serve } from './lib/dev.js';
+import * as vault from '../sdk/vault/index.js';
+import * as repo from './repo.js';
+import { readManifest, bundleGame, gamePage, checkSite, shelfFiles } from './build.js';
+import { serve } from './dev.js';
 
 const { P, rel, exists, problem } = repo;
 
@@ -88,6 +88,7 @@ const commands = {
     if (!ids.length) problem('No games in games/.');
     const games = ids.map(id => [id, readManifest(id)]);                 // validate everything before asking for the password
     const lib = await signIn();
+    for (const [f, data] of Object.entries(await shelfFiles())) repo.writeAtomic(repo.sitePath(f), data);
     for (const [id, g] of games) {
       const html = await bundleGame(id, g);
       const changed = [
@@ -151,8 +152,8 @@ const commands = {
     } else problem('npm run user -- list | add <name> | remove <name> | passwd');
   },
 
-  check() {
-    const { problems, games, people } = checkSite();
+  async check() {
+    const { problems, games, people } = await checkSite();
     if (problems.length) { problems.forEach(p => console.error('✗ ' + p)); process.exit(1); }
     console.log('✓ docs/ is valid: ' + games + ' game(s), ' + people + ' people');
   },

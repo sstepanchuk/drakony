@@ -5,22 +5,20 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import * as vault from '../../docs/lib/vault.js';
+import * as vault from '../sdk/vault/index.js';
 
 export class Problem extends Error {}
 export const problem = msg => { throw new Problem(msg); };
 
 // IHROTEKA_ROOT lets tests run the tools against a scratch copy of the repository
-export const ROOT = path.resolve(process.env.IHROTEKA_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '../..'));
-const TOOLS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const ROOT = path.resolve(process.env.IHROTEKA_ROOT || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
+const TOOLS = path.dirname(fileURLToPath(import.meta.url));
 export const P = {
   games: path.join(ROOT, 'games'),       // plaintext sources (local only)
   site: path.join(ROOT, 'docs'),         // published site
   vault: path.join(ROOT, 'vault'),       // encrypted sources
   keyring: path.join(ROOT, 'docs', 'keyring.json'),
-  template: path.join(TOOLS, 'templates', 'game.html'),
-  api: path.join(TOOLS, 'runtime', 'library-api.js'),
-  sdk: path.join(TOOLS, '..', 'sdk')       // shared libraries games import as @ihroteka/<name>
+  sdk: path.join(TOOLS, '..', 'sdk')     // @ihroteka/<name> modules: vault, shelf, api, net
 };
 export const rel = p => path.relative(ROOT, p) || '.';
 export const exists = fs.existsSync;

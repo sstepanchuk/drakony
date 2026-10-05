@@ -4,7 +4,7 @@
 //
 // Every attempt has a number k carried by the offer, the answer and the candidates, so a late answer or
 // candidate from an earlier attempt cannot spoil a newer one. Only the guest starts attempts (no glare).
-import { ICE } from './servers.js';
+import { ICE } from './config.js';
 import { pubOn } from './brokers.js';
 import { deliver, flushRelay } from './link.js';
 

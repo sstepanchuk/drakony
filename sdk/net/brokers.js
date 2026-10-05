@@ -7,8 +7,7 @@
 // - a connection that is still being set up is never restarted (browsers report minor network changes
 //   often, and restarting on each of them used to break joining a room);
 // - while no broker works at all, retries are frequent: the problem is probably our own network.
-import { BROKERS, MQTT_LIB } from './servers.js';
-import { me, SENDER } from './identity.js';
+import { BROKERS, MQTT_LIB, me, SENDER } from './config.js';
 
 const SENDERS = 16;                                    // how many senders the duplicate filter remembers
 const TD = new TextDecoder();

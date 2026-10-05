@@ -1,10 +1,11 @@
 /* =====================================================================
-   LOCK — shared by every library page: sign-in, remembering the device,
-   fetching and decrypting content. User-facing text is Ukrainian.
+   @ihroteka/shelf — the site: sign-in, remembering the device, fetching and decrypting
+   content. Built into docs/lib/ihroteka.js together with its pages (index.html: the shelf,
+   game.html: each game's public page). User-facing text is Ukrainian.
    Page markup: #unlock (form), #pw (password), #err (error), #busy (progress).
    ===================================================================== */
-import * as vault from './vault.js';
-import * as device from './keystore.js';
+import * as vault from '../vault/index.js';
+import * as device from './device.js';
 
 window.__ihrotekaBooted = true;                      // the page's fallback timer checks this (see index.html)
 const root = new URL('../', import.meta.url);        // site root (this folder is lib/)

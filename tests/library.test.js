@@ -7,7 +7,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import * as vault from '../docs/lib/vault.js';
+import * as vault from '../sdk/vault/index.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(REPO, 'tools', 'cli.js');
@@ -35,8 +35,6 @@ const game = (id, extra = {}) => {
 
 before(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'ihroteka-'));
-  fs.mkdirSync(file('docs/lib'), { recursive: true });
-  for (const f of ['index.html', 'lib/lock.js', 'lib/vault.js', 'lib/keystore.js', 'lib/style.css']) fs.copyFileSync(path.join(REPO, 'docs', f), file('docs', f));
   fs.writeFileSync(file('package.json'), JSON.stringify({ homepage: 'https://example.github.io/lib/' }));
   const out = must(['init', 'alice', 'bob']);
   for (const m of out.matchAll(/^\s+(\w+)\s+(\S+)$/gm)) pw[m[1]] = m[2];
@@ -124,6 +122,10 @@ test('a new password replaces the keys, so the old one opens nothing', async () 
 });
 
 test('check catches stale keys and unexpected files', () => {
+  const css = fs.readFileSync(file('docs/lib/ihroteka.css'));
+  write('docs/lib/ihroteka.css', 'body{}');
+  assert.match(run(['check']).out, /ihroteka\.css is out of date/);
+  fs.writeFileSync(file('docs/lib/ihroteka.css'), css);
   write('docs/demo/leak.js', 'secret');
   assert.match(run(['check']).out, /leak\.js: unexpected file/);
   fs.rmSync(file('docs/demo/leak.js'));

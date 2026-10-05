@@ -26,8 +26,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;700&family=Unbounded:wght@500;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../lib/style.css">
-<link rel="modulepreload" href="../lib/lock.js">
+<link rel="stylesheet" href="../lib/ihroteka.css">
+<link rel="modulepreload" href="../lib/ihroteka.js">
 </head>
 <body>
 <main class="card" id="lock">
@@ -49,7 +49,7 @@
   setTimeout(function () { if (!window.__ihrotekaBooted) document.getElementById('busy').textContent = 'Цей браузер застарий для бібліотеки. Онови його або відкрий в іншому.'; }, 8000);
 </script>
 <script type="module">
-  import { bootGame } from '../lib/lock.js';
+  import { bootGame } from '../lib/ihroteka.js';
   bootGame({{idJson}});
 </script>
 </body>

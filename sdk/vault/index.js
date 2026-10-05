@@ -20,12 +20,12 @@ export const text = u8 => dec.decode(u8);
 
 // Associated data for every ciphertext: a file swapped in under another name will not decrypt.
 export const label = {
-  library: () => 'drakony:library',
-  game: id => 'drakony:game:' + id,
-  source: id => 'drakony:source:' + id,
-  name: id => 'drakony:name:' + id,
-  priv: id => 'drakony:priv:' + id,
-  box: id => 'drakony:box:' + id
+  library: () => 'ihroteka:library',
+  game: id => 'ihroteka:game:' + id,
+  source: id => 'ihroteka:source:' + id,
+  name: id => 'ihroteka:name:' + id,
+  priv: id => 'ihroteka:priv:' + id,
+  box: id => 'ihroteka:box:' + id
 };
 
 /* ---------- AES-GCM: [12-byte iv][ciphertext + tag] ---------- */
@@ -77,7 +77,8 @@ async function boxKey(priv, pubRaw, epk, id) {
 }
 
 /* ---------- keyring ---------- */
-export const newKeyring = () => ({ v: 1, kid: '', kdf: { salt: b64(random(16)), iterations: 600000 }, people: [] });
+export const KEYRING_V = 2;                            // format version: changes whenever the labels above do
+export const newKeyring = () => ({ v: KEYRING_V, kid: '', kdf: { salt: b64(random(16)), iterations: 600000 }, people: [] });
 
 // a new person: fresh key pair, private key sealed with their password (box and name are added by the caller)
 export async function newPerson(keyring, id, password) {

@@ -49,7 +49,9 @@ export function requireClean(...dirs) {
 /* ---------- keyring & people ---------- */
 export function readKeyring() {
   if (!exists(P.keyring)) problem('No ' + rel(P.keyring) + '. Start with `node tools/cli.js init <name> …`.');
-  return JSON.parse(fs.readFileSync(P.keyring, 'utf8'));
+  const kr = JSON.parse(fs.readFileSync(P.keyring, 'utf8'));
+  if (kr.v !== vault.KEYRING_V) problem(rel(P.keyring) + ' is format v' + kr.v + ', these tools read v' + vault.KEYRING_V + '.');
+  return kr;
 }
 export const writeKeyring = kr => writeAtomic(P.keyring, JSON.stringify(kr, null, 2) + '\n');
 

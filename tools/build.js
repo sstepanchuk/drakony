@@ -136,7 +136,7 @@ export async function checkSite() {
   let kr = null;
   try { kr = JSON.parse(fs.readFileSync(P.keyring, 'utf8')); } catch (e) { bad(rel(P.keyring) + ': ' + e.message); }
   if (kr) {
-    if (kr.v !== 1 || !kr.kid || !kr.kdf?.salt || !(kr.kdf.iterations >= 100000)) bad('keyring.json: invalid header');
+    if (kr.v !== vault.KEYRING_V || !kr.kid || !kr.kdf?.salt || !(kr.kdf.iterations >= 100000)) bad('keyring.json: invalid header');
     if (!kr.people?.length) bad('keyring.json: no people');
     for (const p of kr.people || []) if (!(p.id && p.pub && p.priv && p.name && p.box?.epk && p.box?.ct)) bad('keyring.json: incomplete entry ' + (p.id || '?'));
   }

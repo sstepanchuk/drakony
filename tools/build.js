@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as esbuild from 'esbuild';
 import * as vault from '../sdk/vault/index.js';
-import { P, rel, exists, problem, homepage, sourceIds, siteGames, sitePath, sourcePath, walk } from './repo.js';
+import { P, MIME, rel, esc, exists, problem, homepage, sourceIds, siteGames, sitePath, sourcePath, walk } from './repo.js';
 
 const RESERVED = new Set(['lib']);                     // top-level names the site itself uses
 
@@ -58,9 +58,8 @@ export const sdkModules = () => Object.fromEntries((exists(P.sdk) ? fs.readdirSy
 /* ---------- one self-contained page ---------- */
 // Styles and module scripts are bundled inline; images, fonts and sounds they use become data: URLs.
 // Anything else the page points to by a relative URL would not exist on the site, so the build stops.
-const ASSETS = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.json': 'application/json' };
-const loader = Object.fromEntries(Object.keys(ASSETS).filter(e => e !== '.json').map(e => [e, 'dataurl']));
+const ASSETS = Object.fromEntries(Object.entries(MIME).filter(([, t]) => /^(image|font|audio)\/|json/.test(t)));   // inlined as data: URLs
+const loader = Object.fromEntries(Object.keys(ASSETS).filter(e => e !== '.json').map(e => [e, 'dataurl']));   // scripts import JSON as data
 const attr = (tag, name) => tag.match(new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i'))?.slice(1).find(v => v !== undefined);
 const local = url => url && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(url);
 const dataUrl = file => 'data:' + ASSETS[path.extname(file).toLowerCase()] + ';base64,' + fs.readFileSync(file).toString('base64');
@@ -104,7 +103,6 @@ export async function bundleGame(id, g) {
 }
 
 /* ---------- public game page with the lock and the link preview ---------- */
-const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export function gamePage(id, g) {
   const base = homepage();
   if (!/^https:\/\/[^/]+\/(.*\/)?$/.test(base.replace(/\/?$/, '/'))) problem('package.json "homepage" must be the absolute https URL of the site (link previews need it)');

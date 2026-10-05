@@ -66,7 +66,7 @@ async function passwordKey(password) {
 }
 
 // Shows the lock until the library key is known; resolves with it.
-export async function unlock() {
+async function unlock() {
   const form = $('unlock'), pw = $('pw'), err = $('err'), busy = $('busy');
   const show = state => { form.hidden = state !== 'form'; busy.hidden = state !== 'busy'; };
   show('busy');

@@ -71,7 +71,7 @@ function openBroker(N, i) {
 }
 
 // the broker did not answer or the connection dropped: close it and try again after a growing pause
-export function retryBroker(N, i) {
+function retryBroker(N, i) {
   const st = N.br[i];
   if (st.timer) return;
   const old = N.clients[i];
@@ -84,7 +84,7 @@ export function retryBroker(N, i) {
 }
 
 // the same, but right now (after a network change there is nothing to wait for)
-export function rebuildBroker(N, i) {
+function rebuildBroker(N, i) {
   const st = N.br[i], old = N.clients[i];
   clearTimeout(st.timer); st.timer = null;
   N.clients[i] = null;

@@ -31,8 +31,8 @@ export function send(N, m, { fast = false, batch = false } = {}) {
   if (!batch || N.q.length >= 3) flushRelay(N);
   else if (!N.qTimer) N.qTimer = setTimeout(() => flushRelay(N), 45);
 }
-export function sendDirect(N, m) { if (dcLive(N)) { try { N.dcF.send(JSON.stringify(m)); } catch (e) {} } }
-export function sendRelay(N, m) { if (N.linked) { N.q.push(m); flushRelay(N); } }
+function sendDirect(N, m) { if (dcLive(N)) { try { N.dcF.send(JSON.stringify(m)); } catch (e) {} } }
+function sendRelay(N, m) { if (N.linked) { N.q.push(m); flushRelay(N); } }
 export function flushRelay(N) {
   clearTimeout(N.qTimer); N.qTimer = null;
   if (!N.q.length || !N.other) return;
@@ -88,9 +88,9 @@ export function deliver(N, m, viaRelay) {
 /* ---------- ping and path choice ---------- */
 const med = a => a.length ? [...a].sort((x, y) => x - y)[a.length >> 1] : null;
 // round trip of the path in use
-export const curRtt = N => N.via === 'p2p' ? (N.rD != null ? N.rD : N.rR) : (N.rR != null ? N.rR : N.rD);
+const curRtt = N => N.via === 'p2p' ? (N.rD != null ? N.rD : N.rR) : (N.rR != null ? N.rR : N.rD);
 // round trip to show: on the direct path the browser's own network measurement (unaffected by how busy the page is)
-export const netRtt = N => { const r = curRtt(N); return r != null && N.via === 'p2p' && N.iceRtt != null ? Math.min(r, N.iceRtt + 1) : r; };
+const netRtt = N => { const r = curRtt(N); return r != null && N.via === 'p2p' && N.iceRtt != null ? Math.min(r, N.iceRtt + 1) : r; };
 
 // One-way delay estimate: half the round trip of the path in use. On the direct path the browser's own
 // network measurement is used when smaller: what needs evening out is the network, not a busy phone.
@@ -101,7 +101,7 @@ export function lag(N) {
   return Math.min(300, r / 2);
 }
 
-export function pickRoute(N) {
+function pickRoute(N) {
   if (!dcFresh(N)) return 'relay';                     // no direct path, or it went quiet
   if (N.rD == null || N.rR == null) return 'p2p';
   if (N.slowDirect) { if (N.rD <= N.rR + 10) N.slowDirect = false; }      // back to direct as soon as it is not worse

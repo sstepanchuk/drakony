@@ -71,8 +71,7 @@ export function joinRoom({ game, code, lostAfter = 60000 }) {
       if (N.closed) return;
       N.closed = true; N.linked = false;
       try { pubOn(N, { t: 'bye', menu: 1 }); } catch (e) {}
-      for (const k of ['whoTimer', 'annTimer', 'helloTimer', 'rtcTimer', 'failTimer', 'fullTimer', 'qTimer']) { clearTimeout(N[k]); clearInterval(N[k]); }
-      clearInterval(N.watchTimer);
+      stop(N, 'whoTimer', 'annTimer', 'helloTimer', 'failTimer', 'fullTimer', 'qTimer', 'watchTimer');
       closeRtc(N);
       closeBrokers(N);
       removeEventListener('pagehide', onPageHide);
@@ -132,6 +131,10 @@ function emitter() {
   };
 }
 
+// timeouts and intervals share one id space, so clearTimeout stops either
+const stop = (N, ...timers) => { for (const k of timers) { clearTimeout(N[k]); N[k] = null; } };
+const dropQueue = N => { N.q = []; stop(N, 'qTimer'); };
+
 const pub = (N, obj) => { if (!N.closed) pubOn(N, obj); };
 
 // a broker just connected: bring it up to date with what is going on in the room
@@ -175,7 +178,7 @@ function onMessage(N, m, c) {
     case 'full':
       if (N.linked || N.role === 'host' || N.role === 'out') break;
       N.emit('status', 'full');
-      clearTimeout(N.whoTimer); clearInterval(N.helloTimer); clearTimeout(N.fullTimer);
+      stop(N, 'whoTimer', 'helloTimer', 'fullTimer');
       N.fullTimer = setTimeout(() => { if (!N.closed && !N.linked) discover(N); }, 2000);
       break;
     case 'hello':                                      // the guest says hello
@@ -214,7 +217,7 @@ function setRole(N, role) {
 
 // is anyone in the room? if nobody answers, we are first
 function discover(N) {
-  clearTimeout(N.whoTimer); clearInterval(N.annTimer); clearInterval(N.helloTimer);
+  stop(N, 'whoTimer', 'annTimer', 'helloTimer');
   N.other = null;
   setRole(N, null);
   pub(N, { t: 'who' });
@@ -223,7 +226,7 @@ function discover(N) {
 }
 
 function becomeHost(N) {
-  clearTimeout(N.whoTimer); clearInterval(N.helloTimer); clearInterval(N.annTimer);
+  stop(N, 'whoTimer', 'annTimer', 'helloTimer');
   N.other = null;
   setRole(N, 'host');
   N.emit('status', 'waiting');
@@ -233,7 +236,7 @@ function becomeHost(N) {
 }
 
 function becomeGuest(N, host) {
-  clearTimeout(N.whoTimer); clearInterval(N.annTimer); clearInterval(N.helloTimer);
+  stop(N, 'whoTimer', 'annTimer', 'helloTimer');
   N.other = host;
   setRole(N, 'guest');
   N.emit('status', 'joining');
@@ -250,7 +253,7 @@ function becomeGuest(N, host) {
 function linkUp(N) {                                   // both players are here
   N.linked = true;
   listenTo(N, N.other);
-  clearInterval(N.helloTimer); clearInterval(N.annTimer);
+  stop(N, 'annTimer', 'helloTimer');
   N.lastSeen = performance.now();
   N.weak = false; N.byeAt = 0; N.rtcTries = 0; N.rtcNext = performance.now() + 300;
   resetPaths(N);
@@ -286,7 +289,7 @@ function relink(N, from) {
   const old = N.other;
   if (old && old !== from) pub(N, { t: 'moved', to: old });
   closeRtc(N);
-  N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
+  dropQueue(N);
   N.other = from; N.byeAt = 0;
   listenTo(N, from);
   N.rtcTries = 0;
@@ -302,7 +305,7 @@ function relink(N, from) {
 function leaveQuietly(N) {
   N.linked = false;
   N.weak = false;
-  for (const k of ['whoTimer', 'annTimer', 'helloTimer', 'fullTimer']) { clearTimeout(N[k]); clearInterval(N[k]); }
+  stop(N, 'whoTimer', 'annTimer', 'helloTimer', 'fullTimer');
   listenTo(N, null);                                   // and no longer take in the host's data stream
   closeRtc(N);
   setRole(N, 'out');
@@ -324,7 +327,7 @@ function dropPeer(N) {
   N.weak = false; N.byeAt = 0;
   listenTo(N, null);
   closeRtc(N);
-  N.q = []; clearTimeout(N.qTimer); N.qTimer = null;
+  dropQueue(N);
   N.emit('peer-gone');
   refresh(N);
 }

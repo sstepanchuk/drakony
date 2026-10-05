@@ -3,12 +3,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
-import { P, rel, exists, problem, gameIds } from './repo.js';
+import { P, MIME, rel, esc, exists, problem, gameIds } from './repo.js';
 import { readManifest, withLibraryApi, sdkModules } from './build.js';
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
-  '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
-const esc = s => String(s).replace(/[&<>"]/g, c => '&#' + c.charCodeAt(0) + ';');
 const text = type => type + (/^(text|application\/json)/.test(type) ? '; charset=utf-8' : '');
 
 // The build bundles @ihroteka/<name> imports; in the browser an import map points them at sdk/ instead.
@@ -37,7 +34,7 @@ export function serve(what = 'games', port = '8000', host = '127.0.0.1') {
     if (file !== base && !file.startsWith(base + path.sep)) return send(403, 'text/plain', 'Forbidden');
     if (exists(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!exists(file)) return send(404, 'text/plain', 'Not found');
-    send(200, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', fs.readFileSync(file));
+    send(200, MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', fs.readFileSync(file));
   };
 
   http.createServer((req, res) => {

@@ -23,6 +23,11 @@ export const P = {
 export const rel = p => path.relative(ROOT, p) || '.';
 export const exists = fs.existsSync;
 export const same = (a, b) => Buffer.from(a).equals(Buffer.from(b));
+// content types of everything a game or the site may contain
+export const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
+export const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export const homepage = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).homepage || '';
 
 export const gameIds = () => exists(P.games) ? fs.readdirSync(P.games).filter(id => exists(path.join(P.games, id, 'game.json'))).sort() : [];
@@ -65,12 +70,15 @@ export async function open(password) {
   if (kr.kid !== kid) problem('keyring.json is inconsistent: its key id does not match the library key.');
   return { kr, me: who.person, raw, key: await vault.importKey(raw), kid };
 }
-export const nameOf = (key, p) => vault.unseal(key, vault.unb64(p.name), vault.label.name(p.id)).then(vault.text, () => '?');
+// names are sealed with the library key: only people with access see who else has it
+const sealName = async (key, id, name) => vault.b64(await vault.seal(key, name, vault.label.name(id)));
+const openName = (key, p) => vault.unseal(key, vault.unb64(p.name), vault.label.name(p.id)).then(vault.text);
+export const nameOf = (key, p) => openName(key, p).catch(() => '?');
 
 export async function addPerson(kr, raw, key, name, password) {
   const id = Buffer.from(vault.random(6)).toString('hex');
   const person = await vault.newPerson(kr, id, password);
-  person.name = vault.b64(await vault.seal(key, name, vault.label.name(id)));
+  person.name = await sealName(key, id, name);
   person.box = await vault.boxFor(person, raw);
   kr.people.push(person);
 }
@@ -120,11 +128,11 @@ export async function rotate(kr, lib) {
   const files = [];
   for (const [file, aad] of sealedFiles()) files.push([file, aad, await readSealed(file, aad, lib)]);
   const names = [];
-  for (const p of kr.people) names.push(await vault.unseal(lib.key, vault.unb64(p.name), vault.label.name(p.id)));
+  for (const p of kr.people) names.push(await openName(lib.key, p));
   const raw = vault.newLibraryKey(), next = { raw, key: await vault.importKey(raw), kid: await vault.keyId(raw) };
   for (const [file, aad, plain] of files) fs.writeFileSync(file + '.tmp', await vault.sealFile(next.key, next.kid, plain, aad));
   for (const [i, p] of kr.people.entries()) {
-    p.name = vault.b64(await vault.seal(next.key, names[i], vault.label.name(p.id)));
+    p.name = await sealName(next.key, p.id, names[i]);
     p.box = await vault.boxFor(p, raw);
   }
   kr.kid = next.kid;

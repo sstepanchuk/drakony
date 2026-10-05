@@ -1,0 +1,15 @@
+{
+  "name": "drakony",
+  "private": true,
+  "type": "module",
+  "homepage": "https://sstepanchuk.github.io/drakony/",
+  "scripts": {
+    "dev": "node tools/cli.js dev",
+    "build": "node tools/cli.js build",
+    "unlock": "node tools/cli.js unlock",
+    "user": "node tools/cli.js user"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

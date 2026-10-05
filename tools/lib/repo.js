@@ -19,7 +19,8 @@ export const P = {
   vault: path.join(ROOT, 'vault'),       // encrypted sources
   keyring: path.join(ROOT, 'docs', 'keyring.json'),
   template: path.join(TOOLS, 'templates', 'game.html'),
-  api: path.join(TOOLS, 'runtime', 'library-api.js')
+  api: path.join(TOOLS, 'runtime', 'library-api.js'),
+  sdk: path.join(TOOLS, '..', 'sdk')       // shared libraries games import as @ihroteka/<name>
 };
 export const rel = p => path.relative(ROOT, p) || '.';
 export const exists = fs.existsSync;

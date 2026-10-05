@@ -4,12 +4,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { P, rel, exists, problem, gameIds } from './repo.js';
-import { readManifest, withLibraryApi } from './build.js';
+import { readManifest, withLibraryApi, sdkModules } from './build.js';
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.webp': 'image/webp', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
 const esc = s => String(s).replace(/[&<>"]/g, c => '&#' + c.charCodeAt(0) + ';');
 const text = type => type + (/^(text|application\/json)/.test(type) ? '; charset=utf-8' : '');
+
+// The build bundles @ihroteka/<name> imports; in the browser an import map points them at sdk/ instead.
+const SDK = '/@ihroteka/';
+function withSdk(html) {
+  const imports = Object.fromEntries(Object.keys(sdkModules()).map(m => [m, SDK + m.split('/')[1] + '/index.js']));
+  return html.replace(/<script\b/i, m => '<script type="importmap">' + JSON.stringify({ imports }) + '</script>\n' + m);
+}
 
 export function serve(what = 'games', port = '8000', host = '127.0.0.1') {
   const games = what !== 'docs', dir = games ? P.games : P.site;
@@ -24,9 +31,10 @@ export function serve(what = 'games', port = '8000', host = '127.0.0.1') {
         gameIds().map(id => '<li><a href="/' + id + '/">' + esc(readManifest(id).title) + '</a></li>').join('') + '</ul>');
     }
     const game = games && url.match(/^\/([a-z0-9-]+)\/(index\.html)?$/)?.[1];
-    if (game && gameIds().includes(game)) return send(200, 'text/html', withLibraryApi(fs.readFileSync(path.join(dir, game, 'index.html'), 'utf8'), game, readManifest(game)));
-    let file = path.join(dir, url);
-    if (file !== dir && !file.startsWith(dir + path.sep)) return send(403, 'text/plain', 'Forbidden');
+    if (game && gameIds().includes(game)) return send(200, 'text/html', withSdk(withLibraryApi(fs.readFileSync(path.join(dir, game, 'index.html'), 'utf8'), game, readManifest(game))));
+    const base = games && url.startsWith(SDK) ? P.sdk : dir;   // shared libraries, as the import map names them
+    let file = path.join(base, games && base === P.sdk ? url.slice(SDK.length) : url);
+    if (file !== base && !file.startsWith(base + path.sep)) return send(403, 'text/plain', 'Forbidden');
     if (exists(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!exists(file)) return send(404, 'text/plain', 'Not found');
     send(200, TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', fs.readFileSync(file));

@@ -51,6 +51,10 @@ export function withLibraryApi(html, id, g) {
   return html.replace(at, m => m + '\n<script>' + api.trim() + '</script>');
 }
 
+/* ---------- shared libraries: import … from '@ihroteka/<name>' resolves to sdk/<name>/index.js ---------- */
+export const sdkModules = () => Object.fromEntries((exists(P.sdk) ? fs.readdirSync(P.sdk) : [])
+  .filter(n => exists(path.join(P.sdk, n, 'index.js'))).map(n => ['@ihroteka/' + n, path.join(P.sdk, n, 'index.js')]));
+
 /* ---------- one self-contained page ---------- */
 // Styles and module scripts are bundled inline; images, fonts and sounds they use become data: URLs.
 // Anything else the page points to by a relative URL would not exist on the site, so the build stops.
@@ -67,7 +71,7 @@ export async function bundleGame(id, g) {
   if (!/^\s*<!doctype html>/i.test(html)) problem(where + ' must start with <!doctype html> (without it the page renders in quirks mode)');
   html = withLibraryApi(html, id, g);
   const build = async (entry, extra) => (await esbuild.build({ entryPoints: [path.join(dir, entry)], bundle: true, minify: true, write: false, charset: 'utf8',
-    legalComments: 'none', logLevel: 'silent', loader, ...extra }).catch(e => problem(where + ': ' + (e.errors?.[0]?.text || e.message)))).outputFiles[0].text.trim();
+    legalComments: 'none', logLevel: 'silent', loader, alias: sdkModules(), ...extra }).catch(e => problem(where + ': ' + (e.errors?.[0]?.text || e.message)))).outputFiles[0].text.trim();
 
   for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
     if (!/\brel\s*=\s*["']?stylesheet/i.test(tag) || !local(attr(tag, 'href'))) continue;

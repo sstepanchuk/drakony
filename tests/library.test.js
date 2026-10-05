@@ -27,7 +27,7 @@ const game = (id, extra = {}) => {
   write(`games/${id}/game.json`, JSON.stringify({ title: 'Test ' + id, tagline: 't', description: 'd', image: 'preview.png', ...extra }));
   write(`games/${id}/index.html`, '<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="style.css"></head><body><img src="dot.png"><script type="module" src="main.js"></script></body></html>');
   write(`games/${id}/style.css`, 'body{background:url(dot.png)}');
-  write(`games/${id}/main.js`, 'import { hi } from "./lib/hi.js"; document.title = hi;');
+  write(`games/${id}/main.js`, 'import { hi } from "./lib/hi.js"; import { validRoomCode } from "@ihroteka/net"; document.title = hi + validRoomCode("abcdef");');
   write(`games/${id}/lib/hi.js`, 'export const hi = "hello";');
   write(`games/${id}/dot.png`, PNG);
   write(`games/${id}/preview.png`, PNG);
@@ -61,6 +61,7 @@ test('the game page is one self-contained module page with the library API', asy
   assert.match(html, /<script type="module">/);
   assert.doesNotMatch(html, /src="(?!data:)|href="(?!data:)/);              // every relative reference was inlined
   assert.match(html, /hello/);
+  assert.match(html, /\[a-z0-9\]\{6,12\}/);                                    // @ihroteka/net was bundled in
 });
 
 test('wrong password is refused', () => {
@@ -168,6 +169,8 @@ test('dev server stays inside its folder and survives bad requests', async () =>
     assert.equal(await get('/..%2fgames-backup/x'), 403);
     assert.equal(await get('/%E0%A4%A'), 400);
     assert.equal(await get('/demo/'), 200);
+    assert.equal(await get('/@ihroteka/net/index.js'), 200);                  // shared libraries, through the import map
+    assert.equal(await get('/@ihroteka/..%2f..%2fpackage.json'), 403);
     assert.equal(await get('/'), 200);
   } finally { server.kill(); }
 });

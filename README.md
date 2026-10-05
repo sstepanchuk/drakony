@@ -17,7 +17,7 @@ A tiny private game library. Password-protected, end-to-end encrypted, hosted on
 docs/    published site (deployed by GitHub Actions)
 vault/   encrypted game sources
 games/   plaintext sources (local only, git-ignored)
-tools/   build & key management
+tools/   cli.js (commands) · lib/repo.js (keys, sealed files) · lib/build.js (bundling, checks) · lib/dev.js
 ```
 
 ## Usage

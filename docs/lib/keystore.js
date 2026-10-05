@@ -1,39 +1,34 @@
 /* =====================================================================
    REMEMBERING THIS DEVICE
-   After sign-in the browser stores your private key as non-extractable: the page can use it,
-   but nobody can read its bytes, not even the page itself. The password is never stored.
-   If storage is unavailable (private window), the key lives only until the tab is closed.
+   After sign-in the private key is kept in IndexedDB as a non-extractable CryptoKey: the page
+   can use it, but nobody can read its bytes. The password is never stored. Without IndexedDB
+   (some private windows) the key lives only until the tab closes.
    ===================================================================== */
 const DB = 'ihroteka', STORE = 'keys', SLOT = 'me';
 let memory = null;
 
-function db() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+function request(mode, op) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(DB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction(STORE, mode), req = op(tx.objectStore(STORE));
+      tx.oncomplete = () => { db.close(); resolve(req.result); };
+      tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+    };
   });
 }
-async function tx(mode, fn) {
-  const d = await db();
-  return new Promise((res, rej) => {
-    const t = d.transaction(STORE, mode), q = fn(t.objectStore(STORE));
-    t.oncomplete = () => { d.close(); res(q && q.result); };
-    t.onerror = t.onabort = () => { d.close(); rej(t.error); };
-  });
-}
+const quietly = p => p.catch(() => undefined);
 
 export async function remember(id, priv) {
   memory = { id, priv };
-  try { await tx('readwrite', s => s.put(memory, SLOT)); } catch (e) {}
+  await quietly(request('readwrite', s => s.put(memory, SLOT)));
 }
 export async function recall() {
-  if (memory) return memory;
-  try { memory = (await tx('readonly', s => s.get(SLOT))) || null; } catch (e) {}
-  return memory;
+  return memory || (memory = (await quietly(request('readonly', s => s.get(SLOT)))) || null);
 }
 export async function forget() {
   memory = null;
-  try { await tx('readwrite', s => s.delete(SLOT)); } catch (e) {}
+  await quietly(request('readwrite', s => s.delete(SLOT)));
 }

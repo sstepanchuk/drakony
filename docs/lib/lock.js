@@ -1,115 +1,114 @@
 /* =====================================================================
-   LOCK
-   Shared by every library page: password sign-in, remembering the device,
+   LOCK — shared by every library page: sign-in, remembering the device,
    fetching and decrypting content. User-facing text is Ukrainian.
+   Page markup: #unlock (form), #pw (password), #err (error), #busy (progress).
    ===================================================================== */
-import { signIn, libraryKey, unseal, label, toText } from './vault.js';
-import { remember, recall, forget } from './keystore.js';
+import * as vault from './vault.js';
+import * as device from './keystore.js';
 
 const root = new URL('../', import.meta.url);        // site root (this folder is lib/)
 const $ = id => document.getElementById(id);
+const MSG = {
+  offline: 'Не вдалося завантажити. Перевір інтернет і онови сторінку.',
+  failed: 'Щось пішло не так. Перевір інтернет і спробуй ще.',
+  wrong: 'Не той пароль.',
+  game: 'Не вдалося відкрити гру. Онови сторінку.',
+  library: 'Не вдалося відкрити бібліотеку. Онови сторінку.'
+};
 
+// no-cache: after a key rotation a cached old file would no longer decrypt
 async function fetchBytes(path) {
-  const r = await fetch(new URL(path, root), { cache: 'no-cache' });   // after a key rotation a cached old file would no longer decrypt
-  if (!r.ok) throw new Error(path + ': ' + r.status);
+  const r = await fetch(new URL(path, root), { cache: 'no-cache' });
+  if (!r.ok) throw new Error(path + ': HTTP ' + r.status);
   return new Uint8Array(await r.arrayBuffer());
 }
+// start a download now, read it later (keeps an early failure from being reported as unhandled)
+function prefetch(path) {
+  const p = fetchBytes(path);
+  p.catch(() => {});
+  return p;
+}
 let keyringP = null;
-const keyring = () => keyringP || (keyringP = fetchBytes('keyring.json').then(b => JSON.parse(toText(b))));
+const keyring = () => keyringP || (keyringP = fetchBytes('keyring.json').then(b => JSON.parse(vault.text(b))));
 
-// the library key from what this device remembers; null means a password is needed
-async function savedKey() {
-  const me = await recall();
+async function libraryKey(id, priv) {
+  const raw = await vault.libraryKey(await keyring(), id, priv);
+  return raw && vault.importKey(raw);
+}
+// key from what this device remembers; null → ask for the password
+async function rememberedKey() {
+  const me = await device.recall();
   if (!me) return null;
-  try {
-    const k = await libraryKey(await keyring(), me.id, me.priv);
-    if (k) return k.key;
-  } catch (e) {}
-  await forget();                                    // the person was removed or the stored key is broken
-  return null;
+  await keyring();                                   // network errors propagate: never forget a key because we are offline
+  const key = await libraryKey(me.id, me.priv).catch(() => null);
+  if (!key) await device.forget();                   // removed from the library, or the stored key is broken
+  return key;
 }
 async function passwordKey(password) {
-  const kr = await keyring();
-  const who = await signIn(kr, password);
+  const who = await vault.signIn(await keyring(), password);
   if (!who) return null;
-  await remember(who.person.id, who.priv);
-  return (await libraryKey(kr, who.person.id, who.priv)).key;
+  await device.remember(who.person.id, who.priv);
+  return libraryKey(who.person.id, who.priv);
 }
 
-export async function openSealed(key, path, aad) {
-  return unseal(key, await fetchBytes(path), aad);
-}
-
-/* Shows the lock and resolves with the library key. The markup lives in the page itself:
-   #unlock (form), #pw (password), #err (error), #busy (progress text). */
+// Shows the lock until the library key is known; resolves with it.
 export async function unlock() {
   const form = $('unlock'), pw = $('pw'), err = $('err'), busy = $('busy');
-  const state = s => { form.hidden = s !== 'form'; busy.hidden = s !== 'busy'; };
-  state('busy');
+  const show = state => { form.hidden = state !== 'form'; busy.hidden = state !== 'busy'; };
+  show('busy');
   try {
-    const k = await savedKey();
-    if (k) return k;
+    const key = await rememberedKey();
+    if (key) return key;
   } catch (e) {
-    busy.textContent = 'Не вдалося завантажити. Перевір інтернет і онови сторінку.';
+    busy.textContent = MSG.offline;
     throw e;
   }
-  state('form');
+  show('form');
   pw.focus();
-  return new Promise(resolve => {
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      if (!pw.value) return;
-      err.textContent = '';
-      state('busy');
-      let k = null;
-      try { k = await passwordKey(pw.value); } catch (x) { err.textContent = 'Щось пішло не так. Перевір інтернет і спробуй ще.'; }
-      if (k) { pw.value = ''; resolve(k); return; }
-      if (!err.textContent) err.textContent = 'Не той пароль.';
-      state('form');
-      pw.select();
-    });
-  });
+  return new Promise(resolve => form.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!pw.value) return;
+    err.textContent = '';
+    show('busy');
+    let key = null;
+    try { key = await passwordKey(pw.value); } catch (x) { err.textContent = MSG.failed; }
+    if (key) { pw.value = ''; resolve(key); return; }
+    err.textContent ||= MSG.wrong;
+    show('form');
+    pw.select();
+  }));
 }
 
-export async function signOut() { await forget(); }
+// unlock and decrypt a file that started downloading in parallel
+async function openSealed(file, aad, failure) {
+  const blob = prefetch(file);
+  const key = await unlock();
+  try { return vault.text(await vault.unseal(key, await blob, aad)); }
+  catch (e) { $('busy').textContent = failure; $('busy').hidden = false; throw e; }
+}
+
+// page entry points: failures are already shown on the page, the console gets the details
+const boot = fn => (...args) => fn(...args).catch(e => console.error(e));
 
 /* ---------- game page ---------- */
-export async function bootGame(id) {
-  const key = await unlock();
-  let html;
-  try { html = toText(await openSealed(key, id + '/game.bin', label.game(id))); }
-  catch (e) {
-    $('busy').textContent = 'Не вдалося відкрити гру. Онови сторінку.';
-    $('busy').hidden = false;
-    throw e;
-  }
+export const bootGame = boot(async id => {
+  const html = await openSealed(id + '/game.bin', vault.label.game(id), MSG.game);
   // the game replaces the whole page; the URL stays the same, so room links keep working
   document.open();
   document.write(html);
   document.close();
-}
+});
 
 /* ---------- library page ---------- */
-export async function bootLibrary() {
-  const key = await unlock();
-  const games = JSON.parse(toText(await openSealed(key, 'library.bin', label.library())));
-  const list = $('games');
-  list.textContent = '';
-  for (const g of games) {
-    const a = document.createElement('a');
-    a.className = 'game';
-    a.href = g.id + '/';
-    const img = document.createElement('img');
-    img.src = g.id + '/' + g.image; img.alt = ''; img.loading = 'lazy';
-    const body = document.createElement('span');
-    body.className = 'game-body';
-    const t = document.createElement('b'), d = document.createElement('span');
-    t.textContent = g.title; d.textContent = g.tagline;
-    body.append(t, d);
-    a.append(img, body);
-    list.appendChild(a);
-  }
+const el = (tag, props, ...children) => { const n = Object.assign(document.createElement(tag), props); n.append(...children); return n; };
+
+export const bootLibrary = boot(async () => {
+  const games = JSON.parse(await openSealed('library.bin', vault.label.library(), MSG.library));
+  $('games').replaceChildren(...games.map(g => el('a', { className: 'game', href: g.id + '/' },
+    el('img', { src: g.id + '/' + g.image, alt: '', loading: 'lazy' }),
+    el('span', { className: 'game-body' }, el('b', { textContent: g.title }), el('span', { textContent: g.tagline }))
+  )));
   $('lock').hidden = true;
   $('shelf').hidden = false;
-  $('sign-out').addEventListener('click', async () => { await signOut(); location.reload(); });
-}
+  $('sign-out').addEventListener('click', async () => { await device.forget(); location.reload(); });
+});

@@ -16,7 +16,8 @@ const P = {
   site: path.join(ROOT, 'docs'),
   vault: path.join(ROOT, 'vault'),
   keyring: path.join(ROOT, 'docs', 'keyring.json'),
-  template: path.join(ROOT, 'tools', 'templates', 'game.html')
+  template: path.join(ROOT, 'tools', 'templates', 'game.html'),
+  api: path.join(ROOT, 'tools', 'runtime', 'library-api.js')
 };
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const rel = p => path.relative(ROOT, p);
@@ -105,9 +106,44 @@ function packSource(dir) {
 }
 const unpackSource = buf => JSON.parse(zlib.gunzipSync(buf).toString('utf8')).files;
 
+/* ---------- game manifest (games/<id>/game.json) ---------- */
+const MANIFEST = {
+  title: 'name shown on the shelf and in the link preview',
+  tagline: 'one line under the title on the shelf',
+  description: 'page description',
+  image: '1200×630 PNG for the shelf and the link preview',
+  shareTitle: 'optional: link preview title',
+  shareDescription: 'optional: link preview text',
+  imageAlt: 'optional: image description',
+  emoji: 'optional: tab icon',
+  theme: 'optional: browser theme color'
+};
+function readManifest(id) {
+  const dir = path.join(P.games, id), file = path.join(dir, 'game.json');
+  let g;
+  try { g = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { fail(rel(file) + ': ' + e.message); }
+  if (!/^[a-z0-9-]+$/.test(id)) fail('games/' + id + ': folder name must be lowercase letters, digits and dashes (it becomes the URL)');
+  for (const k of Object.keys(g)) if (!(k in MANIFEST)) fail(rel(file) + ': unknown field "' + k + '"');
+  for (const [k, about] of Object.entries(MANIFEST)) {
+    if (!about.startsWith('optional') && !(typeof g[k] === 'string' && g[k].trim())) fail(rel(file) + ': "' + k + '" is required (' + about + ')');
+  }
+  if (!exists(path.join(dir, g.image))) fail(rel(file) + ': image ' + g.image + ' not found');
+  if (!exists(path.join(dir, 'index.html'))) fail('games/' + id + '/index.html not found');
+  return g;
+}
+
+/* ---------- library API for games (see tools/runtime/library-api.js) ---------- */
+function withLibraryApi(html, id, g) {
+  const api = fs.readFileSync(P.api, 'utf8').replace(/^\/\*[\s\S]*?\*\/\s*/, '').replace('__GAME__', () => JSON.stringify({ id, title: g.title }).replace(/</g, '\\u003c'));
+  // right after <meta charset> (it must stay near the top), otherwise right after <head>
+  const at = /<meta charset[^>]*>/i.test(html) ? /<meta charset[^>]*>/i : /<head>/i;
+  if (!at.test(html)) fail('games/' + id + '/index.html has no <head>');
+  return html.replace(at, m => m + '\n<script>' + api.trim() + '</script>');
+}
+
 /* ---------- bundling a game into one page ---------- */
-async function bundleGame(dir) {
-  let html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+async function bundleGame(dir, id, g) {
+  let html = withLibraryApi(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), id, g);
   // stylesheets
   for (const m of [...html.matchAll(/<link rel="stylesheet" href="([^":]+)">/g)]) {
     const css = (await esbuild.transform(fs.readFileSync(path.join(dir, m[1]), 'utf8'), { loader: 'css', minify: true, charset: 'utf8' })).code;
@@ -199,10 +235,10 @@ Set VAULT_PASSWORD to skip the password prompt.`);
     const { key } = await signIn();
     const library = [];
     for (const id of ids) {
-      const dir = path.join(P.games, id), g = JSON.parse(fs.readFileSync(path.join(dir, 'game.json'), 'utf8'));
+      const dir = path.join(P.games, id), g = readManifest(id);
       const out = path.join(P.site, id);
       fs.mkdirSync(out, { recursive: true });
-      const html = await bundleGame(dir);
+      const html = await bundleGame(dir, id, g);
       const wrote = [
         await writeSealed(path.join(out, 'game.bin'), html, V.label.game(id), key),
         await writeSealed(path.join(P.vault, id + '.bin'), packSource(dir), V.label.source(id), key)
@@ -303,9 +339,19 @@ Set VAULT_PASSWORD to skip the password prompt.`);
     const dir = what === 'docs' ? P.site : P.games;
     if (!exists(dir)) fail('No ' + rel(dir) + (what === 'docs' ? '' : ' (run npm run unlock first)'));
     const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.bin': 'application/octet-stream' };
+    const page = (res, html) => res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(html);
     http.createServer((req, res) => {
-      let p = path.join(dir, decodeURIComponent(new URL(req.url, 'http://x').pathname));
+      const url = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      let p = path.join(dir, url);
       if (!p.startsWith(dir)) { res.writeHead(403).end(); return; }
+      if (what !== 'docs') {
+        // a stand-in shelf, so the library API's home() has somewhere to go
+        if (url === '/') return page(res, '<!doctype html><meta charset="utf-8"><title>Games</title><body style="font:16px system-ui;padding:24px"><h1>Games (dev)</h1><ul>' +
+          gameIds().map(id => '<li><a href="/' + id + '/">' + esc(readManifest(id).title) + '</a></li>').join('') + '</ul>');
+        // game pages get the same library API as in the build
+        const m = url.match(/^\/([a-z0-9-]+)\/(index\.html)?$/);
+        if (m && gameIds().includes(m[1])) return page(res, withLibraryApi(fs.readFileSync(path.join(dir, m[1], 'index.html'), 'utf8'), m[1], readManifest(m[1])));
+      }
       if (exists(p) && fs.statSync(p).isDirectory()) p = path.join(p, 'index.html');
       if (!exists(p)) { res.writeHead(404).end('404'); return; }
       res.writeHead(200, { 'Content-Type': (types[path.extname(p)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-store' });

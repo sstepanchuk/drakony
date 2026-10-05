@@ -34,6 +34,33 @@ npm run user -- list | add <name> | remove <name> | passwd
 
 Set `VAULT_PASSWORD` to skip the prompt.
 
-**New game:** add `games/<id>/` with `index.html` (ES modules), `game.json` and a 1200×630 `preview.png`, then `npm run build`.
+## Adding a game
+
+```
+games/<id>/          <id> becomes the URL: /<id>/
+  game.json          title, tagline, description, image (+ optional shareTitle,
+                     shareDescription, imageAlt, emoji, theme) — validated on build
+  index.html         <script type="module"> and <link rel="stylesheet"> are bundled inline
+  preview.png        1200×630, used on the shelf and in link previews
+```
+
+Then `npm run build`, commit, push.
+
+## Game API
+
+Every game gets `window.ihroteka`, injected before its own code (in builds and in `npm run dev`):
+
+```js
+ihroteka.version     // 1
+ihroteka.game        // { id, title }
+ihroteka.libraryUrl  // the shelf
+ihroteka.home()      // back to the library
+```
+
+Treat it as optional — it is `undefined` when a game runs standalone:
+
+```js
+if (window.ihroteka) backButton.onclick = () => ihroteka.home();
+```
 
 **Deploy:** every push to `main` is checked and published by GitHub Actions (Settings → Pages → Source: *GitHub Actions*).

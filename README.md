@@ -2,7 +2,7 @@
 
 A tiny private game library. Password-protected, end-to-end encrypted, hosted on GitHub Pages.
 
-**[Open](https://sstepanchuk.github.io/drakony/)** · [🐉 Two Dragons](https://sstepanchuk.github.io/drakony/dragons/)
+**[Open](https://sstepanchuk.github.io/mini-games/)** · [🐉 Two Dragons](https://sstepanchuk.github.io/mini-games/dragons/)
 
 ## How it works
 

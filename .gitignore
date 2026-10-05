@@ -1,4 +1,4 @@
-# відкритий вихідний код ігор: живе лише локально, у репозиторії — зашифрований vault/
+# plaintext game sources stay local; the repository only holds the encrypted vault/
 games/
 node_modules/
 .DS_Store

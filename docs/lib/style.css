@@ -1,5 +1,5 @@
-/* Ігротека: спільний вигляд замка й полиці. Та сама мова, що й у «Двох драконах»:
-   папір, чорнильний контур, рожева й синя тіні. */
+/* Shared look for the lock and the shelf, matching "Two Dragons":
+   paper, ink outlines, pink and blue offset shadows. */
 :root{
   --page:#e4e2f0;
   --paper:#f6f5fb;
@@ -61,7 +61,7 @@ input[type=password]{
 @keyframes spin{to{transform:rotate(1turn)}}
 @media (prefers-reduced-motion:reduce){.busy::before{animation:none}}
 
-/* полиця з іграми */
+/* game shelf */
 .shelf{width:min(720px,100%);display:flex;flex-direction:column;gap:18px}
 .shelf-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .games{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px}

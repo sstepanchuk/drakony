@@ -1,14 +1,14 @@
 /* =====================================================================
-   ШИФРУВАННЯ БІБЛІОТЕКИ
-   Один і той самий код працює в браузері й у Node (обидва мають Web Crypto).
+   LIBRARY ENCRYPTION
+   The same code runs in the browser and in Node (both have Web Crypto).
 
-   Як це влаштовано:
-   - Усе вміст бібліотеки (ігри, їхній код, список ігор) зашифровано одним ключем бібліотеки (AES-GCM).
-   - У кожної людини своя пара ключів (ECDH P-256). Ключ бібліотеки лежить у keyring.json
-     окремою «скринькою» для кожної людини: відкрити її може лише її приватний ключ.
-   - Приватний ключ зашифровано паролем цієї людини (PBKDF2, 600 000 кроків).
-   Тож пароль відмикає лише твій приватний ключ, а вже ним — ключ бібліотеки. Додати чи
-   прибрати людину можна, не знаючи паролів інших: потрібні лише їхні публічні ключі.
+   How it works:
+   - All library content (games, their sources, the game list) is encrypted with one library key (AES-GCM).
+   - Each person has an ECDH P-256 key pair. keyring.json holds a separate "box" with the library key
+     for every person; only that person's private key can open it.
+   - The private key is encrypted with that person's password (PBKDF2, 600,000 iterations).
+   So a password unlocks only your private key, which then unlocks the library key. People can be
+   added or removed without knowing anyone else's password: only their public keys are needed.
    ===================================================================== */
 const subtle = globalThis.crypto.subtle;
 const utf8 = new TextEncoder(), text = new TextDecoder();
@@ -22,7 +22,7 @@ export const fromB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 export const toText = u8 => text.decode(u8);
 const bytes = v => typeof v === 'string' ? utf8.encode(v) : new Uint8Array(v);
 
-// «Мітка» шифротексту: те саме, що й назва файлу. Файл, підкладений під іншою назвою, не розшифрується.
+// Ciphertext label (AES-GCM associated data): a file swapped in under another name will not decrypt.
 export const label = {
   library: () => 'drakony:library',
   game: id => 'drakony:game:' + id,
@@ -32,7 +32,7 @@ export const label = {
   box: id => 'drakony:box:' + id
 };
 
-/* ---------- симетричне шифрування: [12 байтів iv][шифротекст] ---------- */
+/* ---------- symmetric encryption: [12-byte iv][ciphertext] ---------- */
 export async function seal(key, data, aad) {
   const iv = random(12);
   const ct = new Uint8Array(await subtle.encrypt({ name: 'AES-GCM', iv, additionalData: utf8.encode(aad) }, key, bytes(data)));
@@ -45,17 +45,17 @@ export async function unseal(key, blob, aad) {
   return new Uint8Array(await subtle.decrypt({ name: 'AES-GCM', iv: u.subarray(0, 12), additionalData: utf8.encode(aad) }, key, u.subarray(12)));
 }
 
-/* ---------- ключ бібліотеки ---------- */
+/* ---------- library key ---------- */
 export const newLibraryKey = () => random(32);
 export const importLibraryKey = (raw, extractable = false) => subtle.importKey('raw', raw, AES, extractable, ['encrypt', 'decrypt']);
 
-/* ---------- пароль ---------- */
+/* ---------- password ---------- */
 export async function passwordKey(password, salt, iterations = ITERATIONS) {
   const base = await subtle.importKey('raw', utf8.encode(password.normalize('NFC')), 'PBKDF2', false, ['deriveKey']);
   return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, base, AES, false, ['encrypt', 'decrypt']);
 }
 
-/* ---------- скринька з ключем бібліотеки для однієї людини ---------- */
+/* ---------- a box holding the library key for one person ---------- */
 async function boxKey(myPriv, theirPub, salt, id) {
   const bits = await subtle.deriveBits({ name: 'ECDH', public: theirPub }, myPriv, 256);
   const hk = await subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
@@ -75,7 +75,7 @@ export async function openBox(person, priv) {
   return unseal(k, fromB64(person.box.ct), label.box(person.id));
 }
 
-/* ---------- людина: пара ключів, приватний зашифровано паролем ---------- */
+/* ---------- a person: key pair, private key encrypted with their password ---------- */
 export async function newPerson(id, password, keyring) {
   const pair = await subtle.generateKey(ECDH, true, ['deriveBits']);
   const pub = toB64(await subtle.exportKey('raw', pair.publicKey));
@@ -89,9 +89,9 @@ export async function repassword(person, oldPassword, newPassword, keyring) {
   person.priv = toB64(await seal(await passwordKey(newPassword, salt, keyring.kdf.iterations), pkcs8, label.priv(person.id)));
 }
 
-/* Вхід паролем: шукаємо людину, чий приватний ключ він відмикає.
-   Повертає { person, priv }, де priv — приватний ключ, який не можна витягти зі сховища браузера.
-   extractable потрібен лише інструментам у Node. */
+/* Sign in with a password: find the person whose private key it unlocks.
+   Returns { person, priv }, where priv is a private key that cannot be exported from browser storage.
+   extractable is only needed by the Node tooling. */
 export async function signIn(keyring, password, extractable = false) {
   const pk = await passwordKey(password, fromB64(keyring.kdf.salt), keyring.kdf.iterations);
   for (const person of keyring.people) {
@@ -103,7 +103,7 @@ export async function signIn(keyring, password, extractable = false) {
   return null;
 }
 
-// ключ бібліотеки з приватного ключа людини
+// the library key, opened with a person's private key
 export async function libraryKey(keyring, id, priv, extractable = false) {
   const person = keyring.people.find(p => p.id === id);
   if (!person) return null;

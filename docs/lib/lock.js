@@ -1,23 +1,23 @@
 /* =====================================================================
-   ЗАМОК
-   Спільне для всіх сторінок бібліотеки: вхід паролем, запам'ятовування пристрою,
-   завантаження й розшифрування вмісту.
+   LOCK
+   Shared by every library page: password sign-in, remembering the device,
+   fetching and decrypting content. User-facing text is Ukrainian.
    ===================================================================== */
 import { signIn, libraryKey, unseal, label, toText } from './vault.js';
 import { remember, recall, forget } from './keystore.js';
 
-const root = new URL('../', import.meta.url);        // корінь сайту (ця тека — lib/)
+const root = new URL('../', import.meta.url);        // site root (this folder is lib/)
 const $ = id => document.getElementById(id);
 
 async function fetchBytes(path) {
-  const r = await fetch(new URL(path, root), { cache: 'no-cache' });   // після зміни ключів старий файл з кешу вже не відкриється
+  const r = await fetch(new URL(path, root), { cache: 'no-cache' });   // after a key rotation a cached old file would no longer decrypt
   if (!r.ok) throw new Error(path + ': ' + r.status);
   return new Uint8Array(await r.arrayBuffer());
 }
 let keyringP = null;
 const keyring = () => keyringP || (keyringP = fetchBytes('keyring.json').then(b => JSON.parse(toText(b))));
 
-// ключ бібліотеки з того, що запам'ятав цей пристрій; null — треба пароль
+// the library key from what this device remembers; null means a password is needed
 async function savedKey() {
   const me = await recall();
   if (!me) return null;
@@ -25,7 +25,7 @@ async function savedKey() {
     const k = await libraryKey(await keyring(), me.id, me.priv);
     if (k) return k.key;
   } catch (e) {}
-  await forget();                                    // людину прибрали з бібліотеки або ключ зіпсований
+  await forget();                                    // the person was removed or the stored key is broken
   return null;
 }
 async function passwordKey(password) {
@@ -40,8 +40,8 @@ export async function openSealed(key, path, aad) {
   return unseal(key, await fetchBytes(path), aad);
 }
 
-/* Показує замок і чекає на ключ бібліотеки. Розмітка замка — у самій сторінці:
-   #unlock (форма), #pw (пароль), #err (помилка), #busy (напис «відмикаю»). */
+/* Shows the lock and resolves with the library key. The markup lives in the page itself:
+   #unlock (form), #pw (password), #err (error), #busy (progress text). */
 export async function unlock() {
   const form = $('unlock'), pw = $('pw'), err = $('err'), busy = $('busy');
   const state = s => { form.hidden = s !== 'form'; busy.hidden = s !== 'busy'; };
@@ -73,7 +73,7 @@ export async function unlock() {
 
 export async function signOut() { await forget(); }
 
-/* ---------- сторінка гри ---------- */
+/* ---------- game page ---------- */
 export async function bootGame(id) {
   const key = await unlock();
   let html;
@@ -83,13 +83,13 @@ export async function bootGame(id) {
     $('busy').hidden = false;
     throw e;
   }
-  // гра займає всю сторінку; адреса лишається та сама, тож посилання на кімнату працюють
+  // the game replaces the whole page; the URL stays the same, so room links keep working
   document.open();
   document.write(html);
   document.close();
 }
 
-/* ---------- сторінка бібліотеки ---------- */
+/* ---------- library page ---------- */
 export async function bootLibrary() {
   const key = await unlock();
   const games = JSON.parse(toText(await openSealed(key, 'library.bin', label.library())));

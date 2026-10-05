@@ -1,8 +1,8 @@
 /* =====================================================================
-   ЗАПАМ'ЯТОВУВАННЯ НА ЦЬОМУ ПРИСТРОЇ
-   Після входу браузер зберігає твій приватний ключ як «невитягуваний»: сторінка може ним
-   користуватись, але прочитати його байти не може ніхто, навіть вона сама. Пароль не зберігається.
-   Якщо сховище недоступне (приватне вікно), ключ живе лише до закриття вкладки.
+   REMEMBERING THIS DEVICE
+   After sign-in the browser stores your private key as non-extractable: the page can use it,
+   but nobody can read its bytes, not even the page itself. The password is never stored.
+   If storage is unavailable (private window), the key lives only until the tab is closed.
    ===================================================================== */
 const DB = 'ihroteka', STORE = 'keys', SLOT = 'me';
 let memory = null;
